@@ -10,9 +10,15 @@ require("dotenv").config();
 
 const app = express();
 
+// Import authentication routes
+const authRoutes = require("./routes/authRoutes");
+
 // Middleware
 app.use(cors({ origin: "http://localhost:5173" }));
 app.use(express.json());
+
+// Authentication routes
+app.use("/api/auth", authRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -29,6 +35,10 @@ async function startServer() {
       throw new Error("MONGODB_URI is missing from the .env file");
     }
 
+    if (!process.env.JWT_SECRET) {
+      throw new Error("JWT_SECRET is missing from the .env file");
+    }
+
     await mongoose.connect(process.env.MONGODB_URI);
 
     console.log("MongoDB Atlas connected successfully!");
@@ -37,7 +47,7 @@ async function startServer() {
       console.log(`Server running on port ${PORT}`);
     });
   } catch (error) {
-    console.error("Database connection failed:", error.message);
+    console.error("Backend startup failed:", error.message);
     process.exit(1);
   }
 }
