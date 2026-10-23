@@ -1,122 +1,602 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+import { useState } from "react";
+import "./App.css";
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+const API_URL = "http://localhost:5000/api/auth";
 
-      <div className="ticks"></div>
+const VALID_ROLES = ["student", "instructor", "admin"];
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+// Decode the role stored inside the JWT token.
+function getRoleFromToken(token) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    let payload = parts[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    payload += "=".repeat((4 - (payload.length % 4)) % 4);
+
+    const decodedPayload = JSON.parse(atob(payload));
+    return decodedPayload.role || null;
+  } catch {
+    return null;
+  }
 }
 
-export default App
+function App() {
+  const [page, setPage] = useState("register");
+
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    role: "student",
+  });
+
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isRegister = page === "register";
+
+  const showMessage = (text, type = "error") => {
+    setMessage(text);
+    setMessageType(type);
+  };
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+
+    setMessage("");
+    setMessageType("");
+  };
+
+  const switchPage = (nextPage) => {
+    setPage(nextPage);
+    setMessage("");
+    setMessageType("");
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+
+    setFormData({
+      name: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+      role: "student",
+    });
+  };
+
+  const handleSignOut = () => {
+    localStorage.removeItem("lmsToken");
+    localStorage.removeItem("lmsUser");
+    switchPage("login");
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    setMessage("");
+    setMessageType("");
+
+    const email = formData.email.trim().toLowerCase();
+
+    if (isRegister && !formData.name.trim()) {
+      showMessage("Please enter your full name.");
+      return;
+    }
+
+    if (isRegister && formData.password !== formData.confirmPassword) {
+      showMessage("Passwords do not match. Please try again.");
+      return;
+    }
+
+    if (isRegister && formData.password.length < 8) {
+      showMessage("Password must contain at least 8 characters.");
+      return;
+    }
+
+    if (isRegister && !["student", "instructor"].includes(formData.role)) {
+      showMessage("Please select a valid account role.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const endpoint = isRegister ? "register" : "login";
+
+      const body = isRegister
+        ? {
+            name: formData.name.trim(),
+            email,
+            password: formData.password,
+            role: formData.role,
+          }
+        : {
+            email,
+            password: formData.password,
+          };
+
+      const response = await fetch(`${API_URL}/${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.message ||
+            (isRegister
+              ? "Registration failed. Please try again."
+              : "Login failed. Check your email and password.")
+        );
+      }
+
+      if (isRegister) {
+        showMessage(
+          data.message ||
+            "Account created successfully! You can now sign in.",
+          "success"
+        );
+
+        setFormData({
+          name: "",
+          email: "",
+          password: "",
+          confirmPassword: "",
+          role: "student",
+        });
+
+        return;
+      }
+
+      if (!data.token) {
+        throw new Error(
+          "The backend did not return a login token. Please check your login API."
+        );
+      }
+
+      const tokenRole = getRoleFromToken(data.token);
+      const responseRole = data.user?.role || null;
+
+      // If both are supplied, they must agree.
+      if (
+        tokenRole &&
+        responseRole &&
+        tokenRole !== responseRole
+      ) {
+        throw new Error(
+          "The account role in the login response does not match the token. Please update your backend login code."
+        );
+      }
+
+      const userRole = responseRole || tokenRole;
+
+      if (!VALID_ROLES.includes(userRole)) {
+        throw new Error(
+          "Unable to identify your account role. The backend must return the correct role in the login token or user object."
+        );
+      }
+
+      const savedUser = {
+        ...(data.user || {}),
+        email: data.user?.email || email,
+        role: userRole,
+      };
+
+      localStorage.setItem("lmsToken", data.token);
+      localStorage.setItem("lmsUser", JSON.stringify(savedUser));
+
+      showMessage("Login successful! Welcome to LearnSpace.", "success");
+
+      // Navigate to the dashboard for the authenticated role.
+      setTimeout(() => {
+        setPage(userRole);
+        setMessage("");
+        setMessageType("");
+      }, 500);
+    } catch (error) {
+      showMessage(
+        error.message === "Failed to fetch"
+          ? "Cannot connect to the backend. Make sure your server is running on port 5000."
+          : error.message || "Something went wrong. Please try again."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Role-based dashboards
+  if (VALID_ROLES.includes(page)) {
+    let user = null;
+
+    try {
+      user = JSON.parse(localStorage.getItem("lmsUser") || "null");
+    } catch {
+      user = null;
+    }
+
+    const dashboardDetails = {
+      student: {
+        title: "Student Dashboard",
+        eyebrow: "YOUR LEARNING SPACE",
+        description:
+          "Explore courses, attend live classes, and track your learning progress.",
+        features: [
+          "My Courses",
+          "Upcoming Live Classes",
+          "My Learning Progress",
+        ],
+      },
+
+      instructor: {
+        title: "Instructor Dashboard",
+        eyebrow: "YOUR TEACHING SPACE",
+        description:
+          "Prepare courses, manage classes, and help students learn new skills.",
+        features: [
+          "Create and Manage Courses",
+          "Manage Live Classes",
+          "View Student Progress",
+        ],
+      },
+
+      admin: {
+        title: "Admin Dashboard",
+        eyebrow: "PLATFORM MANAGEMENT",
+        description:
+          "Manage users, courses, and the LearnSpace platform.",
+        features: [
+          "Manage Users",
+          "Manage Courses",
+          "Platform Overview",
+        ],
+      },
+    };
+
+    const dashboard = dashboardDetails[page];
+
+    return (
+      <main className="auth-page">
+        <section className="form-panel">
+          <div className="form-container">
+            <div className="mobile-brand">
+              <span className="brand-icon">L</span>
+              <span>LearnSpace</span>
+            </div>
+
+            <div className="form-heading">
+              <span className="form-eyebrow">
+                {dashboard.eyebrow}
+              </span>
+
+              <h2>{dashboard.title}</h2>
+
+              <p>
+                {user?.name
+                  ? `Welcome, ${user.name}!`
+                  : "Welcome to LearnSpace!"}
+              </p>
+
+              <p>{dashboard.description}</p>
+
+              <p>
+                <strong>Role:</strong> {page}
+              </p>
+            </div>
+
+            <div className="dashboard-features">
+              {dashboard.features.map((feature) => (
+                <div className="benefit" key={feature}>
+                  <span className="benefit-check">✓</span>
+                  {feature}
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="submit-button"
+              onClick={handleSignOut}
+            >
+              Sign out <span aria-hidden="true">→</span>
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  // Registration and login pages
+  return (
+    <main className="auth-page">
+      <section className="auth-layout">
+        <aside className="welcome-panel">
+          <a
+            className="brand"
+            href="#home"
+            onClick={(event) => event.preventDefault()}
+          >
+            <span className="brand-icon">L</span>
+            <span>LearnSpace</span>
+          </a>
+
+          <div className="welcome-content">
+            <span className="eyebrow">
+              YOUR LEARNING JOURNEY STARTS HERE
+            </span>
+
+            <h1>Learn new skills. Unlock your potential.</h1>
+
+            <p>
+              One place to discover courses, learn from expert
+              instructors, and make progress toward your goals.
+            </p>
+
+            <div className="learning-illustration" aria-hidden="true">
+              <div className="orbit orbit-one"></div>
+              <div className="orbit orbit-two"></div>
+              <div className="book book-back"></div>
+
+              <div className="book book-front">
+                <span>LEARN</span>
+                <div className="book-line"></div>
+                <div className="book-line short"></div>
+                <div className="book-line"></div>
+              </div>
+
+              <div className="floating-star">✦</div>
+              <div className="floating-dot"></div>
+            </div>
+
+            <div className="benefits">
+              <div className="benefit">
+                <span className="benefit-check">✓</span>
+                Learn at your own pace
+              </div>
+
+              <div className="benefit">
+                <span className="benefit-check">✓</span>
+                Connect with instructors
+              </div>
+
+              <div className="benefit">
+                <span className="benefit-check">✓</span>
+                Track your learning progress
+              </div>
+            </div>
+          </div>
+
+          <p className="panel-footer">
+            Learn something new every day.
+          </p>
+        </aside>
+
+        <section className="form-panel">
+          <div className="form-container">
+            <div className="mobile-brand">
+              <span className="brand-icon">L</span>
+              <span>LearnSpace</span>
+            </div>
+
+            <div className="form-heading">
+              <span className="form-eyebrow">
+                {isRegister ? "GET STARTED FOR FREE" : "WELCOME BACK"}
+              </span>
+
+              <h2>
+                {isRegister
+                  ? "Create your account"
+                  : "Sign in to LearnSpace"}
+              </h2>
+
+              <p>
+                {isRegister
+                  ? "Join our learning community in just a few steps."
+                  : "Enter your details to continue learning."}
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              {isRegister && (
+                <div className="form-group">
+                  <label htmlFor="name">Full name</label>
+                  <input
+                    id="name"
+                    name="name"
+                    type="text"
+                    placeholder="Enter your full name"
+                    value={formData.name}
+                    onChange={handleChange}
+                    autoComplete="name"
+                    required
+                  />
+                </div>
+              )}
+
+              <div className="form-group">
+                <label htmlFor="email">Email address</label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={formData.email}
+                  onChange={handleChange}
+                  autoComplete="email"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="password">Password</label>
+
+                <div className="password-wrapper">
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder={
+                      isRegister
+                        ? "At least 8 characters"
+                        : "Enter your password"
+                    }
+                    value={formData.password}
+                    onChange={handleChange}
+                    autoComplete={
+                      isRegister ? "new-password" : "current-password"
+                    }
+                    minLength={isRegister ? 8 : undefined}
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    className="show-password"
+                    onClick={() =>
+                      setShowPassword((previous) => !previous)
+                    }
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+
+              {isRegister && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="confirmPassword">
+                      Confirm password
+                    </label>
+
+                    <div className="password-wrapper">
+                      <input
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        type={
+                          showConfirmPassword ? "text" : "password"
+                        }
+                        placeholder="Enter your password again"
+                        value={formData.confirmPassword}
+                        onChange={handleChange}
+                        autoComplete="new-password"
+                        required
+                      />
+
+                      <button
+                        type="button"
+                        className="show-password"
+                        onClick={() =>
+                          setShowConfirmPassword(
+                            (previous) => !previous
+                          )
+                        }
+                        aria-label={
+                          showConfirmPassword
+                            ? "Hide confirm password"
+                            : "Show confirm password"
+                        }
+                      >
+                        {showConfirmPassword ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="role">I want to join as</label>
+
+                    <select
+                      id="role"
+                      name="role"
+                      value={formData.role}
+                      onChange={handleChange}
+                    >
+                      <option value="student">Student</option>
+                      <option value="instructor">Instructor</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {message && (
+                <p
+                  className="form-message"
+                  role="status"
+                  aria-live="polite"
+                  style={{
+                    background:
+                      messageType === "success" ? "#e8f8ee" : "#fff0f0",
+                    color:
+                      messageType === "success" ? "#18794e" : "#c0392b",
+                  }}
+                >
+                  {message}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                className="submit-button"
+                disabled={isSubmitting}
+              >
+                {isSubmitting
+                  ? isRegister
+                    ? "Creating account..."
+                    : "Signing in..."
+                  : isRegister
+                    ? "Create account"
+                    : "Sign in"}
+
+                {!isSubmitting && (
+                  <span aria-hidden="true">→</span>
+                )}
+              </button>
+            </form>
+
+            <p className="signin-text">
+              {isRegister
+                ? "Already have an account? "
+                : "Don't have an account? "}
+
+              <a
+                href={isRegister ? "#login" : "#register"}
+                onClick={(event) => {
+                  event.preventDefault();
+                  switchPage(isRegister ? "login" : "register");
+                }}
+              >
+                {isRegister ? "Sign in" : "Create account"}
+              </a>
+            </p>
+
+            <p className="privacy-text">
+              By continuing, you agree to our Terms of Service and
+              Privacy Policy.
+            </p>
+          </div>
+        </section>
+      </section>
+    </main>
+  );
+}
+
+export default App;
