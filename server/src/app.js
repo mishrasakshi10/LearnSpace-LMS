@@ -10,8 +10,9 @@ require("dotenv").config();
 
 const app = express();
 
-// Import authentication routes
+// Import routes
 const authRoutes = require("./routes/authRoutes");
+const enrollmentRoutes = require("./routes/enrollmentRoutes");
 
 // Middleware
 app.use(cors({ origin: "http://localhost:5173" }));
@@ -19,6 +20,9 @@ app.use(express.json());
 
 // Authentication routes
 app.use("/api/auth", authRoutes);
+
+// Course enrollment routes
+app.use("/api/enrollments", enrollmentRoutes);
 
 // Test route
 app.get("/", (req, res) => {

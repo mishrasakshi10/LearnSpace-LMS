@@ -1,8 +1,9 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 
 const API_URL = "http://localhost:5000/api/auth";
+const ENROLLMENT_API_URL = "http://localhost:5000/api/enrollments";
 
 const VALID_ROLES = ["student", "instructor", "admin"];
 
@@ -69,7 +70,8 @@ const SAMPLE_COURSES = [
   },
 ];
 
-// Decode the role stored inside the JWT token.
+// Decode a JWT payload for client-side session restoration.
+// The backend must still verify the token for protected API requests.
 function getRoleFromToken(token) {
   try {
     const parts = token.split(".");
@@ -81,15 +83,63 @@ function getRoleFromToken(token) {
 
     payload += "=".repeat((4 - (payload.length % 4)) % 4);
 
-    const decodedPayload = JSON.parse(atob(payload));
-    return decodedPayload.role || null;
+    const decoded = JSON.parse(atob(payload));
+    return decoded.role || null;
   } catch {
     return null;
   }
 }
 
+// Restore the logged-in user's dashboard after a browser refresh.
+function getInitialPage() {
+  try {
+    const token = localStorage.getItem("lmsToken");
+    const savedUser = localStorage.getItem("lmsUser");
+
+    if (!token || !savedUser) {
+      return "login";
+    }
+
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      throw new Error("Invalid token");
+    }
+
+    let payload = parts[1]
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+    payload += "=".repeat((4 - (payload.length % 4)) % 4);
+
+    const decoded = JSON.parse(atob(payload));
+    const user = JSON.parse(savedUser);
+
+    if (decoded.exp && decoded.exp * 1000 <= Date.now()) {
+      throw new Error("Session expired");
+    }
+
+    const role = user.role || decoded.role;
+
+    if (
+      !VALID_ROLES.includes(role) ||
+      decoded.role !== role ||
+      !decoded.userId
+    ) {
+      throw new Error("Invalid session");
+    }
+
+    return role;
+  } catch {
+    localStorage.removeItem("lmsToken");
+    localStorage.removeItem("lmsUser");
+    return "login";
+  }
+}
+
 function App() {
-  const [page, setPage] = useState("register");
+  // FIX: Restore the user's dashboard instead of always opening registration.
+  const [page, setPage] = useState(getInitialPage);
+
   const [courseSearch, setCourseSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedCourse, setSelectedCourse] = useState(null);
@@ -105,9 +155,15 @@ function App() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] =
-    useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Enrollment state.
+  const [enrollments, setEnrollments] = useState([]);
+  const [isLoadingEnrollments, setIsLoadingEnrollments] = useState(false);
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  const [enrollmentMessage, setEnrollmentMessage] = useState("");
+  const [enrollmentMessageType, setEnrollmentMessageType] = useState("");
 
   const isRegister = page === "register";
 
@@ -130,6 +186,7 @@ function App() {
 
   const switchPage = (nextPage) => {
     setPage(nextPage);
+    setSelectedCourse(null);
     setMessage("");
     setMessageType("");
     setShowPassword(false);
@@ -147,9 +204,16 @@ function App() {
   const handleSignOut = () => {
     localStorage.removeItem("lmsToken");
     localStorage.removeItem("lmsUser");
+
+    setSelectedCourse(null);
+    setEnrollments([]);
+    setEnrollmentMessage("");
+    setEnrollmentMessageType("");
+
     switchPage("login");
   };
 
+  // Registration and login.
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -241,14 +305,9 @@ function App() {
       const tokenRole = getRoleFromToken(data.token);
       const responseRole = data.user?.role || null;
 
-      // If both are supplied, they must agree.
-      if (
-        tokenRole &&
-        responseRole &&
-        tokenRole !== responseRole
-      ) {
+      if (tokenRole && responseRole && tokenRole !== responseRole) {
         throw new Error(
-          "The account role in the login response does not match the token. Please update your backend login code."
+          "The account role in the login response does not match the token."
         );
       }
 
@@ -256,7 +315,7 @@ function App() {
 
       if (!VALID_ROLES.includes(userRole)) {
         throw new Error(
-          "Unable to identify your account role. The backend must return the correct role in the login token or user object."
+          "Unable to identify your account role. Please check your login API."
         );
       }
 
@@ -269,14 +328,12 @@ function App() {
       localStorage.setItem("lmsToken", data.token);
       localStorage.setItem("lmsUser", JSON.stringify(savedUser));
 
-      showMessage("Login successful! Welcome to LearnSpace.", "success");
+      setEnrollments([]);
+      setSelectedCourse(null);
 
-      // Navigate to the dashboard for the authenticated role.
-      setTimeout(() => {
-        setPage(userRole);
-        setMessage("");
-        setMessageType("");
-      }, 500);
+      setPage(userRole);
+      setMessage("");
+      setMessageType("");
     } catch (error) {
       showMessage(
         error.message === "Failed to fetch"
@@ -288,7 +345,174 @@ function App() {
     }
   };
 
-  // Day 4: Student dashboard with searchable sample courses.
+  // Load the student's saved enrollments when a course is opened.
+  useEffect(() => {
+    if (page !== "student" || !selectedCourse) {
+      return;
+    }
+
+    const token = localStorage.getItem("lmsToken");
+
+    if (!token) {
+      setEnrollments([]);
+      setEnrollmentMessage("Please sign in to view your enrollments.");
+      setEnrollmentMessageType("error");
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadEnrollments = async () => {
+      setIsLoadingEnrollments(true);
+      setEnrollmentMessage("");
+      setEnrollmentMessageType("");
+
+      try {
+        const response = await fetch(ENROLLMENT_API_URL, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            data.message || "Unable to load your enrollments."
+          );
+        }
+
+        if (!cancelled) {
+          setEnrollments(data.enrollments || []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setEnrollmentMessage(
+            error.message === "Failed to fetch"
+              ? "Cannot connect to the enrollment server."
+              : error.message
+          );
+          setEnrollmentMessageType("error");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingEnrollments(false);
+        }
+      }
+    };
+
+    loadEnrollments();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, selectedCourse?.id]);
+
+  const isCourseEnrolled = selectedCourse
+    ? enrollments.some(
+        (enrollment) =>
+          String(enrollment.courseId) === String(selectedCourse.id)
+      )
+    : false;
+
+  // Enroll the logged-in student in the selected course.
+  const handleEnroll = async () => {
+    if (!selectedCourse || isEnrolling || isCourseEnrolled) {
+      return;
+    }
+
+    const token = localStorage.getItem("lmsToken");
+
+    if (!token) {
+      setEnrollmentMessage("Please sign in before enrolling.");
+      setEnrollmentMessageType("error");
+      return;
+    }
+
+    setIsEnrolling(true);
+    setEnrollmentMessage("");
+    setEnrollmentMessageType("");
+
+    try {
+      const response = await fetch(ENROLLMENT_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          courseId: String(selectedCourse.id),
+          courseTitle: selectedCourse.title,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || "Unable to enroll in this course."
+        );
+      }
+
+      if (data.enrollment) {
+        setEnrollments((previous) => {
+          const exists = previous.some(
+            (enrollment) =>
+              String(enrollment.courseId) ===
+              String(data.enrollment.courseId)
+          );
+
+          return exists ? previous : [...previous, data.enrollment];
+        });
+      } else {
+        const refreshResponse = await fetch(ENROLLMENT_API_URL, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const refreshedData = await refreshResponse.json().catch(() => ({}));
+
+        if (refreshResponse.ok) {
+          setEnrollments(refreshedData.enrollments || []);
+        }
+      }
+
+      setEnrollmentMessage(
+        data.message || "Successfully enrolled in the course!"
+      );
+      setEnrollmentMessageType("success");
+    } catch (error) {
+      setEnrollmentMessage(
+        error.message === "Failed to fetch"
+          ? "Cannot connect to the server. Please try again."
+          : error.message
+      );
+      setEnrollmentMessageType("error");
+
+      if (error.message === "You are already enrolled in this course.") {
+        try {
+          const response = await fetch(ENROLLMENT_API_URL, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            setEnrollments(data.enrollments || []);
+          }
+        } catch {
+          // Keep the original error message visible.
+        }
+      }
+    } finally {
+      setIsEnrolling(false);
+    }
+  };
+
+  // Student dashboard.
   if (page === "student") {
     let student = null;
 
@@ -305,6 +529,7 @@ function App() {
 
     const filteredCourses = SAMPLE_COURSES.filter((course) => {
       const search = courseSearch.trim().toLowerCase();
+
       const matchesSearch =
         course.title.toLowerCase().includes(search) ||
         course.description.toLowerCase().includes(search) ||
@@ -312,12 +537,13 @@ function App() {
         course.instructor.toLowerCase().includes(search);
 
       const matchesCategory =
-        selectedCategory === "All" || course.category === selectedCategory;
+        selectedCategory === "All" ||
+        course.category === selectedCategory;
 
       return matchesSearch && matchesCategory;
     });
 
-    // Day 5: Detailed course page for the selected sample course.
+    // Course details.
     if (selectedCourse) {
       const courseLearning = {
         1: [
@@ -363,6 +589,7 @@ function App() {
         "Core concepts and fundamentals",
         "Guided practice and recap",
       ];
+
       const outcomes = courseLearning[selectedCourse.id] || courseLearning[1];
 
       return (
@@ -379,25 +606,41 @@ function App() {
               <span className="brand-icon">L</span>
               <span>LearnSpace</span>
             </a>
+
             <div className="student-topbar-right">
               <span className="student-role-pill">Student</span>
-              <button type="button" className="student-signout" onClick={handleSignOut}>
+              <button
+                type="button"
+                className="student-signout"
+                onClick={handleSignOut}
+              >
                 Sign out
               </button>
             </div>
           </header>
 
           <section className="course-detail-content">
-            <button type="button" className="course-detail-back" onClick={() => setSelectedCourse(null)}>
+            <button
+              type="button"
+              className="course-detail-back"
+              onClick={() => setSelectedCourse(null)}
+            >
               <span aria-hidden="true">←</span> Back to courses
             </button>
 
-            <section className={`course-detail-hero course-art-${selectedCourse.id}`}>
+            <section
+              className={`course-detail-hero course-art-${selectedCourse.id}`}
+            >
               <div className="course-detail-hero-copy">
-                <span className="course-detail-kicker">LEARNSPACE COURSE</span>
-                <span className="course-detail-category">{selectedCourse.category}</span>
+                <span className="course-detail-kicker">
+                  LEARNSPACE COURSE
+                </span>
+                <span className="course-detail-category">
+                  {selectedCourse.category}
+                </span>
                 <h1>{selectedCourse.title}</h1>
                 <p>{selectedCourse.description}</p>
+
                 <div className="course-detail-instructor">
                   <span className="course-instructor-avatar">
                     {selectedCourse.instructor.charAt(0)}
@@ -408,6 +651,7 @@ function App() {
                   </span>
                 </div>
               </div>
+
               <div className="course-detail-hero-art">
                 <span aria-hidden="true">{selectedCourse.icon}</span>
                 <span className="course-hero-sparkle">✦</span>
@@ -417,85 +661,183 @@ function App() {
             <section className="course-detail-stats" aria-label="Course summary">
               <article className="course-stat-card">
                 <span className="course-stat-icon">◷</span>
-                <div><small>Duration</small><strong>{selectedCourse.duration}</strong></div>
+                <div>
+                  <small>Duration</small>
+                  <strong>{selectedCourse.duration}</strong>
+                </div>
               </article>
+
               <article className="course-stat-card">
                 <span className="course-stat-icon">▣</span>
-                <div><small>Difficulty</small><strong>{selectedCourse.level}</strong></div>
+                <div>
+                  <small>Difficulty</small>
+                  <strong>{selectedCourse.level}</strong>
+                </div>
               </article>
+
               <article className="course-stat-card">
                 <span className="course-stat-icon">▤</span>
-                <div><small>Category</small><strong>{selectedCourse.category}</strong></div>
+                <div>
+                  <small>Category</small>
+                  <strong>{selectedCourse.category}</strong>
+                </div>
               </article>
             </section>
 
             <div className="course-detail-layout">
               <div className="course-detail-main">
                 <section className="course-detail-panel">
-                  <span className="course-section-eyebrow">COURSE OVERVIEW</span>
+                  <span className="course-section-eyebrow">
+                    COURSE OVERVIEW
+                  </span>
                   <h2>About this course</h2>
                   <p>{selectedCourse.description}</p>
                   <p>
-                    This course is designed to help you build your knowledge step by step.
-                    Explore the learning outcomes and sample content below.
+                    This course is designed to help you build your knowledge
+                    step by step. Explore the learning outcomes and sample
+                    content below.
                   </p>
                 </section>
 
                 <section className="course-detail-panel">
-                  <span className="course-section-eyebrow">YOUR LEARNING GOALS</span>
+                  <span className="course-section-eyebrow">
+                    YOUR LEARNING GOALS
+                  </span>
                   <h2>What you’ll learn</h2>
+
                   <div className="course-outcomes">
                     {outcomes.map((outcome) => (
                       <div className="course-outcome" key={outcome}>
-                        <span aria-hidden="true">✓</span><p>{outcome}</p>
+                        <span aria-hidden="true">✓</span>
+                        <p>{outcome}</p>
                       </div>
                     ))}
                   </div>
                 </section>
 
                 <section className="course-detail-panel">
-                  <span className="course-section-eyebrow">START LEARNING</span>
+                  <span className="course-section-eyebrow">
+                    START LEARNING
+                  </span>
                   <h2>Course content</h2>
                   <p className="course-content-intro">
                     Preview the sample learning sections for this course.
                   </p>
+
                   <div className="course-lesson-list">
                     {lessons.map((lesson, index) => (
                       <div className="course-lesson-row" key={lesson}>
-                        <span className="course-lesson-number">{String(index + 1).padStart(2, "0")}</span>
+                        <span className="course-lesson-number">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
                         <span className="course-lesson-text">
                           <strong>{lesson}</strong>
                           <small>Sample lesson · Preview only</small>
                         </span>
-                        <span className="course-lesson-lock" aria-label="Preview only">◇</span>
+                        <span
+                          className="course-lesson-lock"
+                          aria-label="Preview only"
+                        >
+                          ◇
+                        </span>
                       </div>
                     ))}
                   </div>
+
                   <p className="course-preview-notice">
-                    These are sample sections. Actual lessons and enrollment are not available yet.
+                    These are sample learning sections. Full lessons will be
+                    added later.
                   </p>
                 </section>
               </div>
 
               <aside className="course-detail-sidebar">
-                <div className="course-sidebar-icon">{selectedCourse.icon}</div>
-                <span className="course-section-eyebrow">YOUR NEXT STEP</span>
-                <h3>Ready to grow your skills?</h3>
+                <div className="course-sidebar-icon">
+                  {selectedCourse.icon}
+                </div>
+
+                <span className="course-section-eyebrow">
+                  YOUR NEXT STEP
+                </span>
+
+                <h3>
+                  {isCourseEnrolled
+                    ? "You're enrolled!"
+                    : "Ready to grow your skills?"}
+                </h3>
+
                 <p>
-                  Explore the course overview and learning goals. Enrollment will be added
-                  in a future development step.
+                  {isCourseEnrolled
+                    ? "Your enrollment is saved. You can return to this course anytime."
+                    : "Enroll now to add this course to your learning journey."}
                 </p>
+
+                {isLoadingEnrollments && (
+                  <p role="status">Checking your enrollment...</p>
+                )}
+
+                {enrollmentMessage && (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                      background:
+                        enrollmentMessageType === "success"
+                          ? "#e8f8ee"
+                          : "#fff0f0",
+                      color:
+                        enrollmentMessageType === "success"
+                          ? "#18794e"
+                          : "#c0392b",
+                      padding: "12px",
+                      borderRadius: "8px",
+                      marginTop: "12px",
+                    }}
+                  >
+                    {enrollmentMessage}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  className="submit-button"
+                  onClick={handleEnroll}
+                  disabled={
+                    isEnrolling ||
+                    isLoadingEnrollments ||
+                    isCourseEnrolled
+                  }
+                  style={{ marginTop: "16px" }}
+                >
+                  {isEnrolling
+                    ? "Enrolling..."
+                    : isCourseEnrolled
+                      ? "Already enrolled ✓"
+                      : "Enroll in this course"}
+                </button>
+
                 <div className="course-sidebar-divider" />
+
                 <div className="course-sidebar-detail">
-                  <span>Instructor</span><strong>{selectedCourse.instructor}</strong>
+                  <span>Instructor</span>
+                  <strong>{selectedCourse.instructor}</strong>
                 </div>
+
                 <div className="course-sidebar-detail">
-                  <span>Course length</span><strong>{selectedCourse.duration}</strong>
+                  <span>Course length</span>
+                  <strong>{selectedCourse.duration}</strong>
                 </div>
+
                 <div className="course-sidebar-detail">
-                  <span>Level</span><strong>{selectedCourse.level}</strong>
+                  <span>Level</span>
+                  <strong>{selectedCourse.level}</strong>
                 </div>
-                <button type="button" className="course-sidebar-back" onClick={() => setSelectedCourse(null)}>
+
+                <button
+                  type="button"
+                  className="course-sidebar-back"
+                  onClick={() => setSelectedCourse(null)}
+                >
                   Explore other courses <span aria-hidden="true">→</span>
                 </button>
               </aside>
@@ -505,6 +847,7 @@ function App() {
       );
     }
 
+    // Student course dashboard.
     return (
       <main className="student-dashboard">
         <header className="student-topbar">
@@ -551,6 +894,7 @@ function App() {
                 <span>Courses to explore</span>
               </div>
             </div>
+
             <div className="student-summary-card">
               <span className="student-summary-icon">🎯</span>
               <div>
@@ -558,6 +902,7 @@ function App() {
                 <span>At your own pace</span>
               </div>
             </div>
+
             <div className="student-summary-card">
               <span className="student-summary-icon">🌱</span>
               <div>
@@ -614,19 +959,26 @@ function App() {
                       {course.category}
                     </span>
                   </div>
+
                   <div className="student-course-body">
                     <div className="student-course-meta">
                       <span>{course.level}</span>
                       <span>{course.duration}</span>
                     </div>
+
                     <h3>{course.title}</h3>
                     <p>{course.description}</p>
+
                     <div className="student-course-footer">
                       <span>By {course.instructor}</span>
                       <button
                         type="button"
                         className="student-course-action"
-                        onClick={() => setSelectedCourse(course)}
+                        onClick={() => {
+                          setSelectedCourse(course);
+                          setEnrollmentMessage("");
+                          setEnrollmentMessageType("");
+                        }}
                       >
                         View course <span aria-hidden="true">→</span>
                       </button>
@@ -640,7 +992,9 @@ function App() {
               <div className="student-empty-state">
                 <span aria-hidden="true">🔎</span>
                 <h3>No courses found</h3>
-                <p>Try another search term or choose a different category.</p>
+                <p>
+                  Try another search term or choose a different category.
+                </p>
                 <button
                   type="button"
                   className="student-course-action"
@@ -659,8 +1013,8 @@ function App() {
     );
   }
 
-  // Role-based dashboards for instructor and admin.
-  if (VALID_ROLES.includes(page)) {
+  // Instructor and admin dashboards.
+  if (page === "instructor" || page === "admin") {
     let user = null;
 
     try {
@@ -669,45 +1023,22 @@ function App() {
       user = null;
     }
 
-    const dashboardDetails = {
-      student: {
-        title: "Student Dashboard",
-        eyebrow: "YOUR LEARNING SPACE",
-        description:
-          "Explore courses, attend live classes, and track your learning progress.",
-        features: [
-          "My Courses",
-          "Upcoming Live Classes",
-          "My Learning Progress",
-        ],
-      },
+    const isInstructor = page === "instructor";
 
-      instructor: {
-        title: "Instructor Dashboard",
-        eyebrow: "YOUR TEACHING SPACE",
-        description:
-          "Prepare courses, manage classes, and help students learn new skills.",
-        features: [
-          "Create and Manage Courses",
-          "Manage Live Classes",
-          "View Student Progress",
-        ],
-      },
-
-      admin: {
-        title: "Admin Dashboard",
-        eyebrow: "PLATFORM MANAGEMENT",
-        description:
-          "Manage users, courses, and the LearnSpace platform.",
-        features: [
-          "Manage Users",
-          "Manage Courses",
-          "Platform Overview",
-        ],
-      },
+    const dashboard = {
+      eyebrow: isInstructor ? "YOUR TEACHING SPACE" : "PLATFORM MANAGEMENT",
+      title: isInstructor ? "Instructor Dashboard" : "Admin Dashboard",
+      description: isInstructor
+        ? "Prepare courses, manage classes, and help students learn new skills."
+        : "Manage users, courses, and the LearnSpace platform.",
+      features: isInstructor
+        ? [
+            "Create and Manage Courses",
+            "Manage Live Classes",
+            "View Student Progress",
+          ]
+        : ["Manage Users", "Manage Courses", "Platform Overview"],
     };
-
-    const dashboard = dashboardDetails[page];
 
     return (
       <main className="auth-page">
@@ -719,20 +1050,14 @@ function App() {
             </div>
 
             <div className="form-heading">
-              <span className="form-eyebrow">
-                {dashboard.eyebrow}
-              </span>
-
+              <span className="form-eyebrow">{dashboard.eyebrow}</span>
               <h2>{dashboard.title}</h2>
-
               <p>
                 {user?.name
                   ? `Welcome, ${user.name}!`
                   : "Welcome to LearnSpace!"}
               </p>
-
               <p>{dashboard.description}</p>
-
               <p>
                 <strong>Role:</strong> {page}
               </p>
@@ -760,7 +1085,7 @@ function App() {
     );
   }
 
-  // Registration and login pages
+  // Registration and login pages.
   return (
     <main className="auth-page">
       <section className="auth-layout">
@@ -775,15 +1100,13 @@ function App() {
           </a>
 
           <div className="welcome-content">
-            <span className="eyebrow">
-              YOUR LEARNING JOURNEY STARTS HERE
-            </span>
+            <span className="eyebrow">YOUR LEARNING JOURNEY STARTS HERE</span>
 
             <h1>Learn new skills. Unlock your potential.</h1>
 
             <p>
-              One place to discover courses, learn from expert
-              instructors, and make progress toward your goals.
+              One place to discover courses, learn from expert instructors,
+              and make progress toward your goals.
             </p>
 
             <div className="learning-illustration" aria-hidden="true">
@@ -807,12 +1130,10 @@ function App() {
                 <span className="benefit-check">✓</span>
                 Learn at your own pace
               </div>
-
               <div className="benefit">
                 <span className="benefit-check">✓</span>
                 Connect with instructors
               </div>
-
               <div className="benefit">
                 <span className="benefit-check">✓</span>
                 Track your learning progress
@@ -820,9 +1141,7 @@ function App() {
             </div>
           </div>
 
-          <p className="panel-footer">
-            Learn something new every day.
-          </p>
+          <p className="panel-footer">Learn something new every day.</p>
         </aside>
 
         <section className="form-panel">
@@ -921,17 +1240,13 @@ function App() {
               {isRegister && (
                 <>
                   <div className="form-group">
-                    <label htmlFor="confirmPassword">
-                      Confirm password
-                    </label>
+                    <label htmlFor="confirmPassword">Confirm password</label>
 
                     <div className="password-wrapper">
                       <input
                         id="confirmPassword"
                         name="confirmPassword"
-                        type={
-                          showConfirmPassword ? "text" : "password"
-                        }
+                        type={showConfirmPassword ? "text" : "password"}
                         placeholder="Enter your password again"
                         value={formData.confirmPassword}
                         onChange={handleChange}
@@ -943,9 +1258,7 @@ function App() {
                         type="button"
                         className="show-password"
                         onClick={() =>
-                          setShowConfirmPassword(
-                            (previous) => !previous
-                          )
+                          setShowConfirmPassword((previous) => !previous)
                         }
                         aria-label={
                           showConfirmPassword
@@ -960,7 +1273,6 @@ function App() {
 
                   <div className="form-group">
                     <label htmlFor="role">I want to join as</label>
-
                     <select
                       id="role"
                       name="role"
@@ -1003,9 +1315,7 @@ function App() {
                     ? "Create account"
                     : "Sign in"}
 
-                {!isSubmitting && (
-                  <span aria-hidden="true">→</span>
-                )}
+                {!isSubmitting && <span aria-hidden="true">→</span>}
               </button>
             </form>
 
@@ -1026,8 +1336,8 @@ function App() {
             </p>
 
             <p className="privacy-text">
-              By continuing, you agree to our Terms of Service and
-              Privacy Policy.
+              By continuing, you agree to our Terms of Service and Privacy
+              Policy.
             </p>
           </div>
         </section>
