@@ -345,9 +345,9 @@ function App() {
     }
   };
 
-  // Load the student's saved enrollments when a course is opened.
+  // Load the student's saved enrollments for the dashboard and course details.
   useEffect(() => {
-    if (page !== "student" || !selectedCourse) {
+    if (page !== "student") {
       return;
     }
 
@@ -406,7 +406,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [page, selectedCourse?.id]);
+  }, [page]);
 
   const isCourseEnrolled = selectedCourse
     ? enrollments.some(
@@ -910,6 +910,95 @@ function App() {
                 <span>Build a new skill</span>
               </div>
             </div>
+          </section>
+
+          <section className="student-courses-section">
+            <div className="student-courses-heading">
+              <div>
+                <span className="student-eyebrow">YOUR LEARNING JOURNEY</span>
+                <h2>My Enrolled Courses</h2>
+                <p>Pick up where you left off with your enrolled courses.</p>
+              </div>
+              <span className="student-role-pill">
+                {enrollments.length} {enrollments.length === 1 ? "course" : "courses"}
+              </span>
+            </div>
+
+            {isLoadingEnrollments ? (
+              <p role="status">Loading your enrolled courses...</p>
+            ) : enrollmentMessage && enrollmentMessageType === "error" ? (
+              <p role="status" aria-live="polite" className="form-message">
+                {enrollmentMessage}
+              </p>
+            ) : enrollments.length === 0 ? (
+              <div className="student-empty-state">
+                <span aria-hidden="true">📚</span>
+                <h3>You haven't enrolled in any courses yet</h3>
+                <p>Explore the courses below and enroll in one to see it here.</p>
+              </div>
+            ) : (
+              <div className="student-course-grid">
+                {enrollments.map((enrollment) => {
+                  const course = SAMPLE_COURSES.find(
+                    (item) => String(item.id) === String(enrollment.courseId)
+                  );
+
+                  return (
+                    <article
+                      className="student-course-card"
+                      key={`${enrollment.courseId}-${enrollment._id || enrollment.enrolledAt || ""}`}
+                    >
+                      <div
+                        className={`student-course-art ${
+                          course ? `course-art-${course.id}` : ""
+                        }`}
+                      >
+                        <span className="student-course-icon" aria-hidden="true">
+                          {course?.icon || "📘"}
+                        </span>
+                        <span className="student-course-category">
+                          {course?.category || "Enrolled course"}
+                        </span>
+                      </div>
+
+                      <div className="student-course-body">
+                        <div className="student-course-meta">
+                          <span>{enrollment.status || "enrolled"}</span>
+                          <span>
+                            {course?.duration || "Course"}
+                          </span>
+                        </div>
+
+                        <h3>{course?.title || enrollment.courseTitle}</h3>
+                        <p>
+                          {course?.description ||
+                            "This course is saved in your enrollment list."}
+                        </p>
+
+                        <div className="student-course-footer">
+                          <span>Saved to your learning space</span>
+                          {course ? (
+                            <button
+                              type="button"
+                              className="student-course-action"
+                              onClick={() => {
+                                setSelectedCourse(course);
+                                setEnrollmentMessage("");
+                                setEnrollmentMessageType("");
+                              }}
+                            >
+                              Continue learning <span aria-hidden="true">→</span>
+                            </button>
+                          ) : (
+                            <span className="student-role-pill">Enrolled</span>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <section className="student-courses-section">
