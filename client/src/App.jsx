@@ -4,6 +4,7 @@ import "./App.css";
 
 const API_URL = "http://localhost:5000/api/auth";
 const ENROLLMENT_API_URL = "http://localhost:5000/api/enrollments";
+const PROGRESS_API_URL = "http://localhost:5000/api/progress";
 
 const VALID_ROLES = ["student", "instructor", "admin"];
 
@@ -164,6 +165,75 @@ function App() {
   const [isEnrolling, setIsEnrolling] = useState(false);
   const [enrollmentMessage, setEnrollmentMessage] = useState("");
   const [enrollmentMessageType, setEnrollmentMessageType] = useState("");
+
+  // Lesson progress is loaded from and saved to the backend.
+  const [completedLessons, setCompletedLessons] = useState({});
+  const [isLoadingProgress, setIsLoadingProgress] = useState(false);
+  const [isSavingProgress, setIsSavingProgress] = useState(false);
+  const [progressMessage, setProgressMessage] = useState("");
+  const [progressMessageType, setProgressMessageType] = useState("");
+
+  const getCourseProgress = (courseId, totalLessons = 3) => {
+    const completed = completedLessons[String(courseId)] || [];
+    return Math.round((completed.length / totalLessons) * 100);
+  };
+
+  const toggleLessonComplete = async (courseId, lessonIndex) => {
+    const token = localStorage.getItem("lmsToken");
+
+    if (!token) {
+      setProgressMessage("Please sign in to save lesson progress.");
+      setProgressMessageType("error");
+      return;
+    }
+
+    const courseKey = String(courseId);
+    const current = completedLessons[courseKey] || [];
+    const next = current.includes(lessonIndex)
+      ? current.filter((index) => index !== lessonIndex)
+      : [...current, lessonIndex];
+
+    setIsSavingProgress(true);
+    setProgressMessage("");
+    setProgressMessageType("");
+
+    try {
+      const response = await fetch(PROGRESS_API_URL, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          courseId: courseKey,
+          completedLessons: next,
+          totalLessons: 3,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.message || "Unable to save lesson progress.");
+      }
+
+      setCompletedLessons((previous) => ({
+        ...previous,
+        [courseKey]: data.completedLessons || next,
+      }));
+      setProgressMessage("Lesson progress saved.");
+      setProgressMessageType("success");
+    } catch (error) {
+      setProgressMessage(
+        error.message === "Failed to fetch"
+          ? "Cannot connect to the server. Your progress was not saved."
+          : error.message || "Unable to save lesson progress."
+      );
+      setProgressMessageType("error");
+    } finally {
+      setIsSavingProgress(false);
+    }
+  };
 
   const isRegister = page === "register";
 
@@ -344,6 +414,73 @@ function App() {
       setIsSubmitting(false);
     }
   };
+
+  // Load saved lesson progress whenever a student opens a course.
+  useEffect(() => {
+    if (page !== "student" || !selectedCourse) {
+      setProgressMessage("");
+      setProgressMessageType("");
+      return;
+    }
+
+    const token = localStorage.getItem("lmsToken");
+    if (!token) {
+      setProgressMessage("Please sign in to view saved lesson progress.");
+      setProgressMessageType("error");
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadProgress = async () => {
+      setIsLoadingProgress(true);
+      setProgressMessage("");
+      setProgressMessageType("");
+
+      try {
+        const response = await fetch(
+          `${PROGRESS_API_URL}/${encodeURIComponent(String(selectedCourse.id))}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.message || "Unable to load lesson progress.");
+        }
+
+        if (!cancelled) {
+          setCompletedLessons((previous) => ({
+            ...previous,
+            [String(selectedCourse.id)]: data.completedLessons || [],
+          }));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setProgressMessage(
+            error.message === "Failed to fetch"
+              ? "Cannot connect to the server to load progress."
+              : error.message || "Unable to load lesson progress."
+          );
+          setProgressMessageType("error");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingProgress(false);
+        }
+      }
+    };
+
+    loadProgress();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, selectedCourse]);
 
   // Load the student's saved enrollments for the dashboard and course details.
   useEffect(() => {
@@ -589,6 +726,9 @@ function App() {
         "Core concepts and fundamentals",
         "Guided practice and recap",
       ];
+      const completedForCourse =
+        completedLessons[String(selectedCourse.id)] || [];
+      const courseProgress = getCourseProgress(selectedCourse.id, lessons.length);
 
       const outcomes = courseLearning[selectedCourse.id] || courseLearning[1];
 
@@ -721,32 +861,107 @@ function App() {
                   </span>
                   <h2>Course content</h2>
                   <p className="course-content-intro">
-                    Preview the sample learning sections for this course.
+                    Mark each sample lesson complete to track your progress.
                   </p>
 
+                  <div style={{ margin: "16px 0" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: "12px",
+                        marginBottom: "8px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span>Your progress</span>
+                      <span>{courseProgress}%</span>
+                    </div>
+                    <div
+                      role="progressbar"
+                      aria-label="Course completion"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={courseProgress}
+                      style={{
+                        height: "10px",
+                        background: "#e8eaf0",
+                        borderRadius: "999px",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${courseProgress}%`,
+                          height: "100%",
+                          background: "#4f46e5",
+                          borderRadius: "999px",
+                          transition: "width 180ms ease",
+                        }}
+                      />
+                    </div>
+                    <small>
+                      {completedForCourse.length} of {lessons.length} lessons completed
+                    </small>
+                  </div>
+
+                  {progressMessage && (
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      style={{
+                        background: progressMessageType === "success" ? "#e8f8ee" : "#fff0f0",
+                        color: progressMessageType === "success" ? "#18794e" : "#c0392b",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        margin: "12px 0",
+                      }}
+                    >
+                      {progressMessage}
+                    </p>
+                  )}
+
+                  {isLoadingProgress && (
+                    <p role="status">Loading saved progress...</p>
+                  )}
+
                   <div className="course-lesson-list">
-                    {lessons.map((lesson, index) => (
-                      <div className="course-lesson-row" key={lesson}>
-                        <span className="course-lesson-number">
-                          {String(index + 1).padStart(2, "0")}
-                        </span>
-                        <span className="course-lesson-text">
-                          <strong>{lesson}</strong>
-                          <small>Sample lesson · Preview only</small>
-                        </span>
-                        <span
-                          className="course-lesson-lock"
-                          aria-label="Preview only"
-                        >
-                          ◇
-                        </span>
-                      </div>
-                    ))}
+                    {lessons.map((lesson, index) => {
+                      const isCompleted = completedForCourse.includes(index);
+                      return (
+                        <div className="course-lesson-row" key={lesson}>
+                          <span className="course-lesson-number">
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <span className="course-lesson-text">
+                            <strong>{lesson}</strong>
+                            <small>
+                              {isCompleted ? "Completed" : "Sample lesson · Mark when finished"}
+                            </small>
+                          </span>
+                          <button
+                            type="button"
+                            className="student-course-action"
+                            onClick={() =>
+                              toggleLessonComplete(selectedCourse.id, index)
+                            }
+                            aria-pressed={isCompleted}
+                            disabled={isLoadingProgress || isSavingProgress}
+                          >
+                            {isSavingProgress
+                              ? "Saving..."
+                              : isCompleted
+                                ? "✓ Completed"
+                                : "Mark complete"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <p className="course-preview-notice">
-                    These are sample learning sections. Full lessons will be
-                    added later.
+                    Lesson progress is saved to your account and loaded from the server.
+                    These are sample learning sections; full lesson materials will be added later.
                   </p>
                 </section>
               </div>
