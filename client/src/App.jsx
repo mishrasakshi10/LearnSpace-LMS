@@ -1,6 +1,7 @@
-
 import { useEffect, useState } from "react";
 import "./App.css";
+import InstructorDashboard from "./InstructorDashboard";
+
 
 const API_URL = "http://localhost:5000/api/auth";
 const ENROLLMENT_API_URL = "http://localhost:5000/api/enrollments";
@@ -721,11 +722,129 @@ function App() {
         ],
       };
 
-      const lessons = [
-        "Introduction and learning goals",
-        "Core concepts and fundamentals",
-        "Guided practice and recap",
-      ];
+      // Three lessons per course so saved progress indexes remain compatible
+      // with the current backend API (totalLessons: 3).
+      const lessonMaterials = {
+        1: [
+          {
+            title: "Lesson 1: HTML Page Structure",
+            description: "Learn how HTML describes the content of a web page.",
+            content: "HTML uses elements to organize headings, paragraphs, links, images, and other content. Most elements have an opening tag and a closing tag.",
+            example: '<h1>Hello, world!</h1>\n<p>This is my first web page.</p>',
+          },
+          {
+            title: "Lesson 2: Styling with CSS",
+            description: "Use CSS to control colors, spacing, and layout.",
+            content: "CSS rules contain a selector and declarations. Each declaration has a property and a value. You can place CSS in a separate stylesheet and link it to your HTML page.",
+            example: 'h1 {\n  color: blue;\n  text-align: center;\n}',
+          },
+          {
+            title: "Lesson 3: JavaScript Basics",
+            description: "Start adding behavior to web pages.",
+            content: "JavaScript can store values in variables, respond to events, and update page content. Open the browser developer console to try simple expressions.",
+            example: 'const message = "Hello from JavaScript";\nconsole.log(message);',
+          },
+        ],
+        2: [
+          {
+            title: "Lesson 1: Introduction to Java",
+            description: "Understand Java and run your first program.",
+            content: "Java is a general-purpose programming language. A basic Java application can start in the main method. Save this example in a file named Main.java, then compile and run it with a JDK.",
+            example: 'public class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello, Java!");\n  }\n}',
+          },
+          {
+            title: "Lesson 2: Variables and Data Types",
+            description: "Store text, numbers, and true/false values.",
+            content: "Variables store values. Common types include int for whole numbers, double for decimal numbers, char for a single character, boolean for true or false, and String for text. Choose a type that fits the data you need to represent.",
+            example: 'public class Main {\n  public static void main(String[] args) {\n    String name = "Sakshi";\n    int age = 22;\n    double score = 85.5;\n    boolean learning = true;\n\n    System.out.println(name);\n    System.out.println(age);\n    System.out.println(score);\n    System.out.println(learning);\n  }\n}',
+          },
+          {
+            title: "Lesson 3: Conditions and Loops",
+            description: "Make decisions and repeat instructions.",
+            content: "An if/else statement chooses a branch based on a condition. A for loop repeats a block of code. In this example, the program checks a number and then prints the numbers 1 through 3.",
+            example: 'public class Main {\n  public static void main(String[] args) {\n    int number = 5;\n\n    if (number > 0) {\n      System.out.println("Positive");\n    } else {\n      System.out.println("Zero or negative");\n    }\n\n    for (int i = 1; i <= 3; i++) {\n      System.out.println(i);\n    }\n  }\n}',
+          },
+        ],
+        3: [
+          {
+            title: "Lesson 1: User-Centered Design",
+            description: "Start with the people who will use the product.",
+            content: "User-centered design considers users' goals, needs, and limitations. Identify the target users and the task they need to complete before deciding how the interface should look.",
+          },
+          {
+            title: "Lesson 2: Color and Typography",
+            description: "Create readable and consistent visual styles.",
+            content: "Use a limited color palette and clear typographic hierarchy. Maintain readable text sizes, sufficient contrast, and consistent spacing so users can scan the interface easily.",
+          },
+          {
+            title: "Lesson 3: Wireframes and Feedback",
+            description: "Plan a screen before creating the final design.",
+            content: "A wireframe is a simplified layout showing where content and controls belong. Share a wireframe with someone, observe whether they can complete the main task, and improve the layout based on their feedback.",
+          },
+        ],
+        4: [
+          {
+            title: "Lesson 1: Tables and Relationships",
+            description: "Learn how relational databases organize information.",
+            content: "A table stores records in rows and attributes in columns. A primary key uniquely identifies each row, while a foreign key can connect a record to another table.",
+            example: 'CREATE TABLE Students (\n  student_id INT PRIMARY KEY,\n  name VARCHAR(100) NOT NULL\n);',
+          },
+          {
+            title: "Lesson 2: Querying Data with SQL",
+            description: "Retrieve and filter records using SELECT.",
+            content: "SELECT chooses columns, FROM names the table, and WHERE filters rows. Use ORDER BY when you need results in a particular order.",
+            example: 'SELECT name\nFROM Students\nWHERE student_id > 10\nORDER BY name;',
+          },
+          {
+            title: "Lesson 3: Joining Tables",
+            description: "Combine related information from multiple tables.",
+            content: "A JOIN combines rows from tables using a related column. An INNER JOIN returns rows with matching values in both tables.",
+            example: 'SELECT Students.name, Enrollments.course_id\nFROM Students\nINNER JOIN Enrollments\n  ON Students.student_id = Enrollments.student_id;',
+          },
+        ],
+        5: [
+          {
+            title: "Lesson 1: Python Variables",
+            description: "Store values and work with basic data types.",
+            content: "Python variables are created when you assign a value. Common values include strings, integers, floating-point numbers, and booleans.",
+            example: 'name = "Sakshi"\nage = 22\nscore = 85.5\nprint(name, age, score)',
+          },
+          {
+            title: "Lesson 2: Conditions and Loops",
+            description: "Control which instructions run and how often.",
+            content: "Use if/else to choose between actions. A for loop can visit each item in a sequence or iterate over a range of numbers.",
+            example: 'number = 5\nif number > 0:\n    print("Positive")\n\nfor i in range(1, 4):\n    print(i)',
+          },
+          {
+            title: "Lesson 3: Reusable Functions",
+            description: "Group instructions into functions.",
+            content: "Functions are defined with def. They can accept parameters and return a result, helping you reuse logic instead of repeating code.",
+            example: 'def add(a, b):\n    return a + b\n\nprint(add(2, 3))',
+          },
+        ],
+        6: [
+          {
+            title: "Lesson 1: React Components",
+            description: "Build interfaces from reusable pieces.",
+            content: "A React component is a JavaScript function that returns UI. Component names conventionally begin with a capital letter.",
+            example: 'function Welcome() {\n  return <h1>Welcome to LearnSpace</h1>;\n}',
+          },
+          {
+            title: "Lesson 2: Props and State",
+            description: "Pass data into components and track changing values.",
+            content: "Props pass information from a parent component to a child. State stores information that can change over time and cause the UI to render again.",
+            example: 'function Greeting({ name }) {\n  return <p>Hello, {name}!</p>;\n}',
+          },
+          {
+            title: "Lesson 3: Handling Events",
+            description: "Respond to clicks and other user actions.",
+            content: "React event handlers let components respond to user interactions. Pass a function to an event prop such as onClick.",
+            example: 'function ClickButton() {\n  return (\n    <button onClick={() => alert("Hello!")}>\n      Click me\n    </button>\n  );\n}',
+          },
+        ],
+      };
+
+      const lessons = lessonMaterials[selectedCourse.id] || lessonMaterials[1];
       const completedForCourse =
         completedLessons[String(selectedCourse.id)] || [];
       const courseProgress = getCourseProgress(selectedCourse.id, lessons.length);
@@ -861,7 +980,7 @@ function App() {
                   </span>
                   <h2>Course content</h2>
                   <p className="course-content-intro">
-                    Mark each sample lesson complete to track your progress.
+                    Explore the lesson explanations and examples below. Mark each lesson complete when you have finished studying it.
                   </p>
 
                   <div style={{ margin: "16px 0" }}>
@@ -929,16 +1048,32 @@ function App() {
                     {lessons.map((lesson, index) => {
                       const isCompleted = completedForCourse.includes(index);
                       return (
-                        <div className="course-lesson-row" key={lesson}>
+                        <article className="course-lesson-row" key={lesson.title}>
                           <span className="course-lesson-number">
                             {String(index + 1).padStart(2, "0")}
                           </span>
-                          <span className="course-lesson-text">
-                            <strong>{lesson}</strong>
-                            <small>
-                              {isCompleted ? "Completed" : "Sample lesson · Mark when finished"}
-                            </small>
-                          </span>
+                          <div className="course-lesson-text">
+                            <strong>{lesson.title}</strong>
+                            <small>{lesson.description}</small>
+                            <p>{lesson.content}</p>
+                            {lesson.example && (
+                              <pre
+                                style={{
+                                  padding: "12px",
+                                  borderRadius: "8px",
+                                  background: "#f3f4f6",
+                                  color: "#1f2937",
+                                  whiteSpace: "pre-wrap",
+                                  overflowX: "auto",
+                                  fontSize: "13px",
+                                  maxWidth: "100%",
+                                }}
+                              >
+                                <code>{lesson.example}</code>
+                              </pre>
+                            )}
+                            <small>{isCompleted ? "Completed" : "Not completed yet"}</small>
+                          </div>
                           <button
                             type="button"
                             className="student-course-action"
@@ -954,14 +1089,13 @@ function App() {
                                 ? "✓ Completed"
                                 : "Mark complete"}
                           </button>
-                        </div>
+                        </article>
                       );
                     })}
                   </div>
 
                   <p className="course-preview-notice">
-                    Lesson progress is saved to your account and loaded from the server.
-                    These are sample learning sections; full lesson materials will be added later.
+                    Lesson progress is saved to your account and loaded from the server. Course materials are being developed progressively.
                   </p>
                 </section>
               </div>
@@ -1317,8 +1451,9 @@ function App() {
     );
   }
 
+  
   // Instructor and admin dashboards.
-  if (page === "instructor" || page === "admin") {
+  if (page === "instructor") {
     let user = null;
 
     try {
@@ -1327,22 +1462,22 @@ function App() {
       user = null;
     }
 
-    const isInstructor = page === "instructor";
+    return (
+      <InstructorDashboard
+        user={user}
+        onSignOut={handleSignOut}
+      />
+    );
+  }
 
-    const dashboard = {
-      eyebrow: isInstructor ? "YOUR TEACHING SPACE" : "PLATFORM MANAGEMENT",
-      title: isInstructor ? "Instructor Dashboard" : "Admin Dashboard",
-      description: isInstructor
-        ? "Prepare courses, manage classes, and help students learn new skills."
-        : "Manage users, courses, and the LearnSpace platform.",
-      features: isInstructor
-        ? [
-            "Create and Manage Courses",
-            "Manage Live Classes",
-            "View Student Progress",
-          ]
-        : ["Manage Users", "Manage Courses", "Platform Overview"],
-    };
+  if (page === "admin") {
+    let user = null;
+
+    try {
+      user = JSON.parse(localStorage.getItem("lmsUser") || "null");
+    } catch {
+      user = null;
+    }
 
     return (
       <main className="auth-page">
@@ -1354,26 +1489,26 @@ function App() {
             </div>
 
             <div className="form-heading">
-              <span className="form-eyebrow">{dashboard.eyebrow}</span>
-              <h2>{dashboard.title}</h2>
+              <span className="form-eyebrow">PLATFORM MANAGEMENT</span>
+              <h2>Admin Dashboard</h2>
               <p>
                 {user?.name
                   ? `Welcome, ${user.name}!`
                   : "Welcome to LearnSpace!"}
               </p>
-              <p>{dashboard.description}</p>
-              <p>
-                <strong>Role:</strong> {page}
-              </p>
+              <p>Manage users, courses, and the LearnSpace platform.</p>
+              <p><strong>Role:</strong> admin</p>
             </div>
 
             <div className="dashboard-features">
-              {dashboard.features.map((feature) => (
-                <div className="benefit" key={feature}>
-                  <span className="benefit-check">✓</span>
-                  {feature}
-                </div>
-              ))}
+              {["Manage Users", "Manage Courses", "Platform Overview"].map(
+                (feature) => (
+                  <div className="benefit" key={feature}>
+                    <span className="benefit-check">✓</span>
+                    {feature}
+                  </div>
+                )
+              )}
             </div>
 
             <button
@@ -1388,6 +1523,7 @@ function App() {
       </main>
     );
   }
+
 
   // Registration and login pages.
   return (
