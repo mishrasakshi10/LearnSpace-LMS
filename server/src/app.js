@@ -15,6 +15,8 @@ const authRoutes = require("./routes/authRoutes");
 const enrollmentRoutes = require("./routes/enrollmentRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const courseRoutes = require("./routes/courseRoutes");
+const quizRoutes = require("./routes/quizRoutes");
+const certificateRoutes = require("./routes/certificateRoutes");
 
 // Middleware
 app.use(cors({ origin: "http://localhost:5173" }));
@@ -31,6 +33,12 @@ app.use("/api/progress", progressRoutes);
 
 // Instructor Course routes
 app.use("/api/courses", courseRoutes);
+
+// Quiz routes
+app.use("/api/quizzes", quizRoutes);
+
+// Certificate routes
+app.use("/api/certificates", certificateRoutes);
 
 // Test route
 app.get("/", (req, res) => {

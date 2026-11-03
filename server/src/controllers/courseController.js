@@ -61,7 +61,7 @@ exports.createCourse = async (req, res) => {
   }
 };
 
-// Get all courses belonging to the logged-in instructor
+// Get instructor's courses
 exports.getMyCourses = async (req, res) => {
   try {
     const courses = await Course.find({
@@ -77,7 +77,124 @@ exports.getMyCourses = async (req, res) => {
   }
 };
 
-// Update one of the logged-in instructor's courses
+// Get all courses
+exports.getAllCourses = async (req, res) => {
+  try {
+    const courses = await Course.find().sort({ createdAt: -1 });
+
+    return res.status(200).json({ courses });
+  } catch (error) {
+    console.error("Get all courses error:", error);
+    return res.status(500).json({
+      message: "Unable to load courses.",
+    });
+  }
+};
+
+// Get one course with its lessons
+exports.getCourseById = async (req, res) => {
+  try {
+    const course = await Course.findOne({
+      courseId: req.params.courseId,
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        message: "Course not found.",
+      });
+    }
+
+    return res.status(200).json({ course });
+  } catch (error) {
+    console.error("Get course details error:", error);
+    return res.status(500).json({
+      message: "Unable to load course details.",
+    });
+  }
+};
+
+// Add a lesson to instructor's course
+exports.addLesson = async (req, res) => {
+  try {
+    const { title, description, videoUrl } = req.body;
+
+    if (typeof title !== "string" || !title.trim()) {
+      return res.status(400).json({
+        message: "Lesson title is required.",
+      });
+    }
+
+    const course = await Course.findOne({
+      courseId: req.params.courseId,
+      instructorId: req.user.userId,
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        message: "Course not found or you do not have permission.",
+      });
+    }
+
+    course.lessons.push({
+      title: title.trim(),
+      description:
+        typeof description === "string" ? description.trim() : "",
+      videoUrl: typeof videoUrl === "string" ? videoUrl.trim() : "",
+      order: course.lessons.length + 1,
+    });
+
+    await course.save();
+
+    return res.status(201).json({
+      message: "Lesson added successfully.",
+      lessons: course.lessons,
+    });
+  } catch (error) {
+    console.error("Add lesson error:", error);
+    return res.status(500).json({
+      message: "Unable to add lesson.",
+    });
+  }
+};
+
+// Delete a lesson from instructor's course
+exports.deleteLesson = async (req, res) => {
+  try {
+    const course = await Course.findOne({
+      courseId: req.params.courseId,
+      instructorId: req.user.userId,
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        message: "Course not found or you do not have permission.",
+      });
+    }
+
+    const lesson = course.lessons.id(req.params.lessonId);
+
+    if (!lesson) {
+      return res.status(404).json({
+        message: "Lesson not found.",
+      });
+    }
+
+    lesson.deleteOne();
+    await course.save();
+
+    return res.status(200).json({
+      message: "Lesson deleted successfully.",
+      lessons: course.lessons,
+    });
+  } catch (error) {
+    console.error("Delete lesson error:", error);
+    return res.status(500).json({
+      message: "Unable to delete lesson.",
+    });
+  }
+};
+
+// Update a course
 exports.updateCourse = async (req, res) => {
   try {
     const { title, description, category, level, price, image } = req.body;
@@ -156,7 +273,7 @@ exports.updateCourse = async (req, res) => {
   }
 };
 
-// Delete one of the logged-in instructor's courses
+// Delete a course
 exports.deleteCourse = async (req, res) => {
   try {
     const course = await Course.findOneAndDelete({
@@ -169,6 +286,17 @@ exports.deleteCourse = async (req, res) => {
         message: "Course not found or you do not have permission to delete it.",
       });
     }
+
+    // Check if a quiz already exists for this course
+const existingQuiz = await Quiz.findOne({
+  courseId: course.courseId,
+});
+
+if (existingQuiz) {
+  return res.status(409).json({
+    message: "A quiz already exists for this course.",
+  });
+}
 
     return res.status(200).json({
       message: "Course deleted successfully.",
