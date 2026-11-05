@@ -17,13 +17,13 @@ LearnSpace is a web-based Learning Management System (LMS) designed to provide a
 ## Project Screenshots
 
 ### Student Dashboard
-![Student Dashboard](screenshots/student-dashboard.png)
+![Student Dashboard](Screenshots/student-dashboard.png)
 
 ### Instructor Dashboard
-![Instructor Dashboard](screenshots/instructor-dashboard.png)
+![Instructor Dashboard](Screenshots/instructor-dashboard.png)
 
 ### Admin Dashboard
-![Admin Dashboard](screenshots/admin-dashboard.png)
+![Admin Dashboard](Screenshots/admin-dashboard.png)
 
 ### Instructor
 - Instructor dashboard
