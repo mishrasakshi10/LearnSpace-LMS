@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from "react";
 import "./AdminDashboard.css";
+import Logo from "./Logo";
 
 const API_URL = "http://localhost:5000/api/admin";
 
@@ -674,8 +675,8 @@ function AdminDashboard({ user, onSignOut }) {
     <div className="admin-layout">
       <aside className="admin-sidebar">
         <div className="admin-brand">
-          <span className="admin-logo">L</span>
-          <span>LearnSpace</span>
+          
+          <Logo width={150} />
         </div>
 
         <p className="admin-sidebar-label">ADMIN PANEL</p>

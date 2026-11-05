@@ -14,6 +14,17 @@ LearnSpace is a web-based Learning Management System (LMS) designed to provide a
 - Track learning progress
 - View live classes
 
+## Project Screenshots
+
+### Student Dashboard
+![Student Dashboard](screenshots/student-dashboard.png)
+
+### Instructor Dashboard
+![Instructor Dashboard](screenshots/instructor-dashboard.png)
+
+### Admin Dashboard
+![Admin Dashboard](screenshots/admin-dashboard.png)
+
 ### Instructor
 - Instructor dashboard
 - Manage courses and lessons
