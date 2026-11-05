@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import "./InstructorDashboard.css";
+import LiveClassroom from "./LiveClassroom";
 
 const API_URL = "http://localhost:5000/api/courses";
 const QUIZ_API_URL = "http://localhost:5000/api/quizzes";
+const LIVE_CLASS_API_URL = "http://localhost:5000/api/live-classes";
 
 const emptyForm = {
   title: "",
@@ -17,6 +19,15 @@ const emptyLessonForm = {
   title: "",
   description: "",
   videoUrl: "",
+};
+
+const emptyLiveClassForm = {
+  title: "",
+  description: "",
+  courseId: "",
+  scheduledDate: "",
+  scheduledTime: "",
+  duration: 60,
 };
 
 const createEmptyQuestion = () => ({
@@ -41,37 +52,26 @@ function getCourseStyle(course) {
   if (value.includes("mysql") || value.includes("database") || value.includes("sql")) {
     return { icon: "🗄️", theme: "cyan" };
   }
-
-  if (value.includes("java")) {
-    return { icon: "☕", theme: "orange" };
-  }
-
-  if (value.includes("python")) {
-    return { icon: "🐍", theme: "blue" };
-  }
-
-  if (value.includes("react")) {
-    return { icon: "⚛️", theme: "cyan" };
-  }
-
-  if (value.includes("javascript")) {
-    return { icon: "JS", theme: "yellow" };
-  }
-
-  if (value.includes("html") || value.includes("css")) {
-    return { icon: "🌐", theme: "pink" };
-  }
-
-  if (value.includes("node")) {
-    return { icon: "🟢", theme: "green" };
-  }
+  if (value.includes("java")) return { icon: "☕", theme: "orange" };
+  if (value.includes("python")) return { icon: "🐍", theme: "blue" };
+  if (value.includes("react")) return { icon: "⚛️", theme: "cyan" };
+  if (value.includes("javascript")) return { icon: "JS", theme: "yellow" };
+  if (value.includes("html") || value.includes("css")) return { icon: "🌐", theme: "pink" };
+  if (value.includes("node")) return { icon: "🟢", theme: "green" };
 
   return { icon: "💻", theme: "violet" };
+}
+
+function getTodayLocalDate() {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
 }
 
 export default function InstructorDashboard({ user: userProp, onSignOut }) {
   const [user, setUser] = useState(userProp || getStoredUser());
   const [page, setPage] = useState("overview");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -97,6 +97,15 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
   const [quizSaving, setQuizSaving] = useState(false);
   const [existingQuiz, setExistingQuiz] = useState(null);
   const [quizStatus, setQuizStatus] = useState("");
+
+  // Live Classes state
+  const [liveClasses, setLiveClasses] = useState([]);
+  const [liveClassForm, setLiveClassForm] = useState(emptyLiveClassForm);
+  const [liveClassLoading, setLiveClassLoading] = useState(false);
+  const [liveClassSaving, setLiveClassSaving] = useState(false);
+
+  // Active LiveKit classroom
+  const [activeLiveClass, setActiveLiveClass] = useState(null);
 
   useEffect(() => {
     if (userProp) setUser(userProp);
@@ -137,10 +146,138 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     }
   };
 
+  const loadLiveClasses = async () => {
+    setLiveClassLoading(true);
+    setError("");
+
+    try {
+      const data = await requestApi(`${LIVE_CLASS_API_URL}/mine`);
+      setLiveClasses(data.liveClasses || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLiveClassLoading(false);
+    }
+  };
+
+  // Schedule a live class
+  const handleLiveClassSubmit = async (e) => {
+    e.preventDefault();
+    setLiveClassSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const scheduledAt = new Date(
+        `${liveClassForm.scheduledDate}T${liveClassForm.scheduledTime}`
+      );
+
+      if (Number.isNaN(scheduledAt.getTime()) || scheduledAt <= new Date()) {
+        throw new Error("Please select a future date and time.");
+      }
+
+      if (!liveClassForm.courseId) {
+        throw new Error("Please select a course.");
+      }
+
+      const payload = {
+        title: liveClassForm.title.trim(),
+        description: liveClassForm.description.trim(),
+        courseId: liveClassForm.courseId,
+        scheduledAt: scheduledAt.toISOString(),
+        duration: Number(liveClassForm.duration),
+      };
+
+      const data = await requestApi(LIVE_CLASS_API_URL, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setMessage(data.message || "Live class scheduled successfully.");
+      setLiveClassForm(emptyLiveClassForm);
+      await loadLiveClasses();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLiveClassSaving(false);
+    }
+  };
+
+  // Change live class status
+  const changeLiveClassStatus = async (id, status) => {
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await requestApi(`${LIVE_CLASS_API_URL}/${id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+
+      setMessage(data.message || "Live class status updated.");
+      await loadLiveClasses();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  // Start a scheduled class and open LiveKit classroom
+  const startAndJoinLiveClass = async (liveClass) => {
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await requestApi(
+        `${LIVE_CLASS_API_URL}/${liveClass._id}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status: "live" }),
+        }
+      );
+
+      setMessage(data.message || "Live class started successfully.");
+
+      await loadLiveClasses();
+      setActiveLiveClass(liveClass);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  // Rejoin an existing live class
+  const joinExistingLiveClass = (liveClass) => {
+    console.log("Selected live class:", liveClass);
+    console.log("Live class ID:", liveClass?._id);
+
+    setError("");
+    setMessage("");
+
+    if (!liveClass?._id) {
+      setError("Live class ID is missing. Please refresh and try again.");
+      return;
+    }
+
+    setActiveLiveClass(liveClass);
+  };
+
+  // Exit classroom
+  const exitLiveClassroom = () => {
+    setActiveLiveClass(null);
+    loadLiveClasses();
+  };
+
   useEffect(() => {
     loadCourses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load live classes whenever Manage Lessons is opened
+  useEffect(() => {
+    if (page === "lessons") {
+      loadLiveClasses();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
   const instructorName = user?.name || user?.fullName || "Instructor";
 
@@ -152,11 +289,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     .join("");
 
   const totalLessons = useMemo(
-    () =>
-      courses.reduce(
-        (sum, course) => sum + (course.lessons?.length || 0),
-        0
-      ),
+    () => courses.reduce((sum, course) => sum + (course.lessons?.length || 0), 0),
     [courses]
   );
 
@@ -164,10 +297,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     () =>
       courses.reduce(
         (sum, course) =>
-          sum +
-          (course.enrolledStudents?.length ||
-            course.students?.length ||
-            0),
+          sum + (course.enrolledStudents?.length || course.students?.length || 0),
         0
       ),
     [courses]
@@ -175,6 +305,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
 
   const navigate = (nextPage) => {
     setPage(nextPage);
+    setSidebarOpen(false);
     setError("");
     setMessage("");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -192,9 +323,9 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     setEditingId(null);
   };
 
+  // Course management
   const handleCourseSubmit = async (e) => {
     e.preventDefault();
-
     setSaving(true);
     setError("");
     setMessage("");
@@ -210,14 +341,12 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
           method: "PUT",
           body: JSON.stringify(payload),
         });
-
         setMessage("Course updated successfully.");
       } else {
         await requestApi(API_URL, {
           method: "POST",
           body: JSON.stringify(payload),
         });
-
         setMessage("Course created successfully.");
       }
 
@@ -233,7 +362,6 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
 
   const editCourse = (course) => {
     setEditingId(course.courseId || course._id);
-
     setForm({
       title: course.title || "",
       description: course.description || "",
@@ -242,20 +370,17 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
       price: course.price ?? "",
       image: course.image || course.imageUrl || "",
     });
-
     navigate("create");
   };
 
   const deleteCourse = async (course) => {
     const id = course.courseId || course._id;
-
     if (!window.confirm(`Delete "${course.title}"?`)) return;
 
     try {
       await requestApi(`${API_URL}/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
-
       setMessage("Course deleted successfully.");
       await loadCourses();
     } catch (err) {
@@ -263,21 +388,21 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     }
   };
 
+  // Recorded lesson management
   const openLessons = async (course) => {
     const id = course.courseId || course._id;
-
     setSelectedCourse(course);
     setLessons([]);
     setLessonForm(emptyLessonForm);
     setLessonLoading(true);
     setPage("lessons");
+    setSidebarOpen(false);
     setError("");
     setMessage("");
 
     try {
       const data = await requestApi(`${API_URL}/${encodeURIComponent(id)}`);
       const fullCourse = data.course || data;
-
       setSelectedCourse(fullCourse);
       setLessons(fullCourse.lessons || data.lessons || []);
     } catch (err) {
@@ -296,11 +421,9 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
 
   const addLesson = async (e) => {
     e.preventDefault();
-
     if (!selectedCourse) return;
 
     const id = selectedCourse.courseId || selectedCourse._id;
-
     setLessonSaving(true);
     setError("");
     setMessage("");
@@ -319,10 +442,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
       } else if (data.course?.lessons) {
         setLessons(data.course.lessons);
       } else {
-        const refreshed = await requestApi(
-          `${API_URL}/${encodeURIComponent(id)}`
-        );
-
+        const refreshed = await requestApi(`${API_URL}/${encodeURIComponent(id)}`);
         setLessons((refreshed.course || refreshed).lessons || []);
       }
 
@@ -338,7 +458,6 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
 
   const deleteLesson = async (lesson) => {
     if (!selectedCourse) return;
-
     if (!window.confirm(`Delete "${lesson.title}"?`)) return;
 
     const courseId = selectedCourse.courseId || selectedCourse._id;
@@ -354,9 +473,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
       } else if (data.course?.lessons) {
         setLessons(data.course.lessons);
       } else {
-        setLessons((current) =>
-          current.filter((item) => item._id !== lesson._id)
-        );
+        setLessons((current) => current.filter((item) => item._id !== lesson._id));
       }
 
       setMessage("Lesson deleted successfully.");
@@ -366,6 +483,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     }
   };
 
+  // Quiz management
   const loadQuizForCourse = async (courseId) => {
     if (!courseId) {
       setExistingQuiz(null);
@@ -380,9 +498,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     setQuizQuestions([createEmptyQuestion()]);
 
     try {
-      const data = await requestApi(
-        `${QUIZ_API_URL}/${encodeURIComponent(courseId)}`
-      );
+      const data = await requestApi(`${QUIZ_API_URL}/${encodeURIComponent(courseId)}`);
       setExistingQuiz(data.quiz || null);
       setQuizStatus(data.quiz ? "A quiz already exists for this course." : "");
     } catch (err) {
@@ -453,7 +569,6 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     const hasInvalidQuestion = cleanedQuestions.some(
       (question) =>
         !question.questionText ||
-        question.options.length < 2 ||
         question.options.length !== 4 ||
         !Number.isInteger(question.correctAnswer) ||
         question.correctAnswer < 0 ||
@@ -466,6 +581,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     }
 
     setQuizSaving(true);
+
     try {
       const data = await requestApi(QUIZ_API_URL, {
         method: "POST",
@@ -480,6 +596,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
         title: quizTitle.trim(),
         questions: cleanedQuestions,
       });
+
       setMessage(data.message || "Quiz created successfully.");
       setQuizStatus("Quiz uploaded successfully.");
     } catch (err) {
@@ -490,6 +607,8 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
   };
 
   const signOut = () => {
+    setSidebarOpen(false);
+
     if (onSignOut) {
       onSignOut();
       return;
@@ -500,6 +619,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     window.location.href = "/login";
   };
 
+  // Quiz manager UI
   const renderQuizManager = () => (
     <section className="instructor-section">
       <div className="section-heading">
@@ -584,7 +704,9 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
                     <textarea
                       rows="2"
                       value={question.questionText}
-                      onChange={(e) => updateQuizQuestion(questionIndex, "questionText", e.target.value)}
+                      onChange={(e) =>
+                        updateQuizQuestion(questionIndex, "questionText", e.target.value)
+                      }
                       required
                     />
                   </label>
@@ -595,7 +717,9 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
                         <span>Option {optionIndex + 1} *</span>
                         <input
                           value={option}
-                          onChange={(e) => updateQuizOption(questionIndex, optionIndex, e.target.value)}
+                          onChange={(e) =>
+                            updateQuizOption(questionIndex, optionIndex, e.target.value)
+                          }
                           required
                         />
                       </label>
@@ -606,11 +730,18 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
                     <span>Correct answer *</span>
                     <select
                       value={question.correctAnswer}
-                      onChange={(e) => updateQuizQuestion(questionIndex, "correctAnswer", Number(e.target.value))}
+                      onChange={(e) =>
+                        updateQuizQuestion(
+                          questionIndex,
+                          "correctAnswer",
+                          Number(e.target.value)
+                        )
+                      }
                     >
                       {question.options.map((option, optionIndex) => (
                         <option key={optionIndex} value={optionIndex}>
-                          Option {optionIndex + 1}{option.trim() ? ` — ${option}` : ""}
+                          Option {optionIndex + 1}
+                          {option.trim() ? ` — ${option}` : ""}
                         </option>
                       ))}
                     </select>
@@ -619,33 +750,274 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
               ))}
 
               <div className="form-footer quiz-form-footer">
-                <button type="button" className="button button-outline" onClick={addQuizQuestion}>
+                <button
+                  type="button"
+                  className="button button-outline"
+                  onClick={addQuizQuestion}
+                >
                   + Add Question
                 </button>
-                <button type="submit" className="button button-primary" disabled={quizSaving}>
+                <button
+                  type="submit"
+                  className="button button-primary"
+                  disabled={quizSaving}
+                >
                   {quizSaving ? "Uploading..." : "Upload Quiz"}
                 </button>
               </div>
             </form>
           ) : (
-            <div className="lesson-empty-state">Choose a course to check or create its quiz.</div>
+            <div className="lesson-empty-state">
+              Choose a course to check or create its quiz.
+            </div>
           )}
         </>
       )}
     </section>
   );
 
+  // Live classes section inside Manage Lessons
+  const renderLiveClasses = () => (
+    <section className="instructor-section live-classes-section">
+      <div className="section-heading">
+        <div>
+          <span className="section-kicker">LIVE LEARNING</span>
+          <h2>Live Classes</h2>
+          <p>
+            Schedule and manage real-time classes alongside your recorded lessons.
+          </p>
+        </div>
+
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={loadLiveClasses}
+          disabled={liveClassLoading}
+        >
+          {liveClassLoading ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+
+      {courses.length === 0 ? (
+        <div className="course-empty-state">
+          <h3>No courses available</h3>
+          <p>Create a course before scheduling a live class.</p>
+          <button className="button button-primary" onClick={() => navigate("create")}>
+            Create Course
+          </button>
+        </div>
+      ) : (
+        <form className="instructor-form" onSubmit={handleLiveClassSubmit}>
+          <h3>Schedule a Live Class</h3>
+
+          <div className="form-grid">
+            <label className="form-field full-field">
+              <span>Class title *</span>
+              <input
+                value={liveClassForm.title}
+                onChange={(e) =>
+                  setLiveClassForm({ ...liveClassForm, title: e.target.value })
+                }
+                placeholder="e.g. Introduction to MySQL"
+                required
+              />
+            </label>
+
+            <label className="form-field full-field">
+              <span>Description</span>
+              <textarea
+                rows="3"
+                value={liveClassForm.description}
+                onChange={(e) =>
+                  setLiveClassForm({ ...liveClassForm, description: e.target.value })
+                }
+                placeholder="What will students learn in this session?"
+              />
+            </label>
+
+            <label className="form-field full-field">
+              <span>Select course *</span>
+              <select
+                value={liveClassForm.courseId}
+                onChange={(e) =>
+                  setLiveClassForm({ ...liveClassForm, courseId: e.target.value })
+                }
+                required
+              >
+                <option value="">Choose a course</option>
+                {courses.map((course) => (
+                  <option
+                    key={course.courseId || course._id}
+                    value={course.courseId || ""}
+                  >
+                    {course.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="form-field">
+              <span>Class date *</span>
+              <input
+                type="date"
+                min={getTodayLocalDate()}
+                value={liveClassForm.scheduledDate}
+                onChange={(e) =>
+                  setLiveClassForm({
+                    ...liveClassForm,
+                    scheduledDate: e.target.value,
+                  })
+                }
+                required
+              />
+            </label>
+
+            <label className="form-field">
+              <span>Class time *</span>
+              <input
+                type="time"
+                value={liveClassForm.scheduledTime}
+                onChange={(e) =>
+                  setLiveClassForm({
+                    ...liveClassForm,
+                    scheduledTime: e.target.value,
+                  })
+                }
+                required
+              />
+            </label>
+
+            <label className="form-field">
+              <span>Duration (minutes) *</span>
+              <input
+                type="number"
+                min="1"
+                max="300"
+                value={liveClassForm.duration}
+                onChange={(e) =>
+                  setLiveClassForm({
+                    ...liveClassForm,
+                    duration: e.target.value,
+                  })
+                }
+                required
+              />
+            </label>
+          </div>
+
+          <div className="form-footer">
+            <span className="form-hint">Select a future date and time.</span>
+            <button
+              className="button button-primary"
+              type="submit"
+              disabled={liveClassSaving}
+            >
+              {liveClassSaving ? "Scheduling..." : "Schedule Live Class"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="lesson-list">
+        <div className="lesson-list-heading">
+          <h3>Your Scheduled Classes</h3>
+          <span>{liveClasses.length} total</span>
+        </div>
+
+        {liveClassLoading ? (
+          <div className="course-loading">
+            <span className="loading-spinner" /> Loading live classes...
+          </div>
+        ) : liveClasses.length === 0 ? (
+          <div className="lesson-empty-state">
+            No live classes scheduled yet. Schedule your first class above.
+          </div>
+        ) : (
+          liveClasses.map((liveClass) => (
+            <article className="lesson-item" key={liveClass._id}>
+              <span className="lesson-number">▶</span>
+
+              <div className="lesson-item-info">
+                <h4>{liveClass.title}</h4>
+                <p><strong>Course:</strong> {liveClass.courseTitle}</p>
+                <p>{liveClass.description || "No description provided."}</p>
+                <p>
+                  <strong>Date:</strong>{" "}
+                  {new Date(liveClass.scheduledAt).toLocaleString()}
+                </p>
+                <p><strong>Duration:</strong> {liveClass.duration} minutes</p>
+                <p>
+                  <strong>Status:</strong>{" "}
+                  <span className={`live-class-status ${liveClass.status}`}>
+                    {liveClass.status}
+                  </span>
+                </p>
+
+                <div className="course-card-actions">
+                  {liveClass.status === "scheduled" && (
+                    <>
+                      <button
+                        className="button button-primary"
+                        type="button"
+                        onClick={() => startAndJoinLiveClass(liveClass)}
+                      >
+                        Start Class
+                      </button>
+
+                      <button
+                        className="button button-danger"
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm("Cancel this live class?")) {
+                            changeLiveClassStatus(liveClass._id, "cancelled");
+                          }
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+
+                  {liveClass.status === "live" && (
+                    <>
+                      <button
+                        className="button button-primary"
+                        type="button"
+                        onClick={() => joinExistingLiveClass(liveClass)}
+                      >
+                        Join Classroom
+                      </button>
+
+                      <button
+                        className="button button-secondary"
+                        type="button"
+                        onClick={() =>
+                          changeLiveClassStatus(liveClass._id, "completed")
+                        }
+                      >
+                        Mark Completed
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+
+  // Instructor overview
   const renderOverview = () => (
     <>
       <section className="welcome-banner">
         <div className="welcome-banner-content">
           <span className="welcome-eyebrow">INSTRUCTOR WORKSPACE</span>
-
           <h1>Welcome back, {instructorName.split(" ")[0]}!</h1>
-
           <p>
-            Manage your courses, create engaging lessons, and help your
-            students keep learning.
+            Manage your courses, create engaging lessons, and help your students
+            keep learning.
           </p>
         </div>
 
@@ -692,10 +1064,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
         </div>
 
         <div className="quick-actions">
-          <button
-            className="quick-action-card"
-            onClick={() => navigate("courses")}
-          >
+          <button className="quick-action-card" onClick={() => navigate("courses")}>
             <span>▣</span>
             <strong>My Courses</strong>
             <small>View and manage your courses</small>
@@ -712,11 +1081,21 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
             <strong>Create Course</strong>
             <small>Publish a new course</small>
           </button>
+
+          <button
+            className="quick-action-card"
+            onClick={() => navigate("lessons")}
+          >
+            <span>📹</span>
+            <strong>Manage Teaching</strong>
+            <small>Manage recorded lessons and live classes</small>
+          </button>
         </div>
       </section>
     </>
   );
 
+  // Courses list
   const renderCourses = () => (
     <section className="instructor-section">
       <div className="section-heading courses-heading">
@@ -739,15 +1118,13 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
 
       {loading ? (
         <div className="course-loading">
-          <span className="loading-spinner" />
-          Loading courses...
+          <span className="loading-spinner" /> Loading courses...
         </div>
       ) : courses.length === 0 ? (
         <div className="course-empty-state">
           <div className="empty-state-icon">▤</div>
           <h3>No courses yet</h3>
           <p>Create your first course to get started.</p>
-
           <button
             className="button button-primary"
             onClick={() => navigate("create")}
@@ -769,15 +1146,12 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
                   <span className="instructor-course-category">
                     {course.category || "Programming"}
                   </span>
-
                   <div className="instructor-course-icon">
                     {courseStyle.icon}
                   </div>
-
                   <span className="course-level-badge">
                     {course.level || "Beginner"}
                   </span>
-
                   <span className="instructor-course-decoration">
                     {courseStyle.icon}
                   </span>
@@ -787,20 +1161,13 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
                   <span className="course-category">
                     {course.category || "General"}
                   </span>
-
                   <h3>{course.title}</h3>
-
-                  <p>
-                    {course.description || "No description added yet."}
-                  </p>
+                  <p>{course.description || "No description added yet."}</p>
 
                   <div className="course-card-meta">
                     <span>{course.lessons?.length || 0} lessons</span>
-
                     <strong>
-                      {Number(course.price) > 0
-                        ? `₹${course.price}`
-                        : "Free"}
+                      {Number(course.price) > 0 ? `₹${course.price}` : "Free"}
                     </strong>
                   </div>
 
@@ -811,14 +1178,12 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
                     >
                       Lessons
                     </button>
-
                     <button
                       className="button button-secondary"
                       onClick={() => editCourse(course)}
                     >
                       Edit
                     </button>
-
                     <button
                       className="button button-danger"
                       onClick={() => deleteCourse(course)}
@@ -835,6 +1200,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     </section>
   );
 
+  // Create or edit course
   const renderCreateCourse = () => (
     <section className="instructor-section">
       <div className="section-heading">
@@ -842,7 +1208,6 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
           <span className="section-kicker">
             {editingId ? "UPDATE YOUR CONTENT" : "START TEACHING"}
           </span>
-
           <h2>{editingId ? "Edit Course" : "Create a New Course"}</h2>
           <p>Fill in the details of your course.</p>
         </div>
@@ -872,11 +1237,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
 
           <label className="form-field">
             <span>Level</span>
-            <select
-              name="level"
-              value={form.level}
-              onChange={handleFormChange}
-            >
+            <select name="level" value={form.level} onChange={handleFormChange}>
               <option>Beginner</option>
               <option>Intermediate</option>
               <option>Advanced</option>
@@ -919,7 +1280,6 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
 
         <div className="form-footer">
           <span className="form-hint">Fields marked * are required.</span>
-
           <div className="form-actions">
             <button
               type="button"
@@ -949,12 +1309,13 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     </section>
   );
 
+  // Manage recorded lessons
   const renderLessons = () => (
     <section className="instructor-section lesson-manager">
       <div className="section-heading lesson-heading">
         <div>
           <span className="section-kicker">COURSE CONTENT</span>
-          <h2>Manage Lessons</h2>
+          <h2>Recorded Lessons</h2>
           <p>
             {selectedCourse
               ? `Course: ${selectedCourse.title}`
@@ -982,13 +1343,12 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
         </div>
       ) : lessonLoading ? (
         <div className="course-loading">
-          <span className="loading-spinner" />
-          Loading lessons...
+          <span className="loading-spinner" /> Loading lessons...
         </div>
       ) : (
         <>
           <form className="lesson-form" onSubmit={addLesson}>
-            <h3>Add a Lesson</h3>
+            <h3>Add a Recorded Lesson</h3>
 
             <div className="form-grid">
               <label className="form-field full-field">
@@ -1025,7 +1385,6 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
 
             <div className="form-footer">
               <span className="form-hint">Lesson title is required.</span>
-
               <button
                 className="button button-primary"
                 type="submit"
@@ -1048,19 +1407,12 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
               </div>
             ) : (
               lessons.map((lesson, index) => (
-                <article
-                  className="lesson-item"
-                  key={lesson._id || index}
-                >
+                <article className="lesson-item" key={lesson._id || index}>
                   <span className="lesson-number">{index + 1}</span>
 
                   <div className="lesson-item-info">
                     <h4>{lesson.title}</h4>
-
-                    <p>
-                      {lesson.description || "No description provided."}
-                    </p>
-
+                    <p>{lesson.description || "No description provided."}</p>
                     {lesson.videoUrl && (
                       <a
                         href={lesson.videoUrl}
@@ -1088,82 +1440,144 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     </section>
   );
 
+  // Display LiveKit classroom when instructor joins
+  if (activeLiveClass) {
+    return (
+      <LiveClassroom
+        liveClassId={activeLiveClass._id}
+        liveClassTitle={activeLiveClass.title}
+        onExit={exitLiveClassroom}
+      />
+    );
+  }
+
   return (
     <div className="instructor-layout">
-      <main className="instructor-main">
-        <header className="instructor-topbar">
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <button
+          type="button"
+          className="instructor-sidebar-overlay"
+          aria-label="Close navigation"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Fixed sidebar */}
+      <aside className={`instructor-sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
+        <button
+          type="button"
+          className="instructor-brand"
+          onClick={() => navigate("overview")}
+        >
+          <span className="instructor-brand-mark">L</span>
+          <span>LearnSpace</span>
+        </button>
+
+        <div className="sidebar-menu-label">MAIN MENU</div>
+
+        <nav className="instructor-sidebar-nav">
           <button
-            className="instructor-brand"
+            type="button"
+            className={`instructor-sidebar-link ${page === "overview" ? "active" : ""}`}
             onClick={() => navigate("overview")}
           >
-            <span className="instructor-brand-mark">L</span>
-            <span>LearnSpace</span>
+            <span className="sidebar-link-icon">▦</span>
+            <span>Overview</span>
           </button>
 
-          <nav className="instructor-top-nav">
+          <button
+            type="button"
+            className={`instructor-sidebar-link ${page === "courses" ? "active" : ""}`}
+            onClick={() => navigate("courses")}
+          >
+            <span className="sidebar-link-icon">▣</span>
+            <span>My Courses</span>
+          </button>
+
+          <button
+            type="button"
+            className={`instructor-sidebar-link ${page === "create" ? "active" : ""}`}
+            onClick={() => {
+              resetForm();
+              navigate("create");
+            }}
+          >
+            <span className="sidebar-link-icon">＋</span>
+            <span>Create Course</span>
+          </button>
+
+          <button
+            type="button"
+            className={`instructor-sidebar-link ${page === "lessons" ? "active" : ""}`}
+            onClick={() => navigate("lessons")}
+          >
+            <span className="sidebar-link-icon">▶</span>
+            <span>Manage Lessons</span>
+          </button>
+
+          <button
+            type="button"
+            className={`instructor-sidebar-link ${page === "quizzes" ? "active" : ""}`}
+            onClick={() => {
+              setQuizCourseId("");
+              setExistingQuiz(null);
+              setQuizStatus("");
+              navigate("quizzes");
+            }}
+          >
+            <span className="sidebar-link-icon">✎</span>
+            <span>Manage Quizzes</span>
+          </button>
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="sidebar-profile">
+            <span className="instructor-avatar">{initials || "I"}</span>
+            <div className="sidebar-profile-details">
+              <strong>{instructorName}</strong>
+              <span>Instructor</span>
+            </div>
+          </div>
+
+          <button type="button" className="sidebar-signout" onClick={signOut}>
+            <span>↪</span>
+            <span>Sign out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main dashboard */}
+      <main className="instructor-main">
+        <header className="instructor-topbar">
+          <div className="topbar-left">
             <button
-              className={`instructor-nav-link ${
-                page === "overview" ? "active" : ""
-              }`}
-              onClick={() => navigate("overview")}
+              type="button"
+              className="sidebar-menu-toggle"
+              aria-label="Toggle sidebar"
+              aria-expanded={sidebarOpen}
+              onClick={() => setSidebarOpen((open) => !open)}
             >
-              Overview
+              ☰
             </button>
 
-            <button
-              className={`instructor-nav-link ${
-                page === "courses" ? "active" : ""
-              }`}
-              onClick={() => navigate("courses")}
-            >
-              My Courses
-            </button>
-
-            <button
-              className={`instructor-nav-link ${
-                page === "create" ? "active" : ""
-              }`}
-              onClick={() => {
-                resetForm();
-                navigate("create");
-              }}
-            >
-              Create Course
-            </button>
-
-            <button
-              className={`instructor-nav-link ${
-                page === "lessons" ? "active" : ""
-              }`}
-              onClick={() => navigate("lessons")}
-            >
-              Manage Lessons
-            </button>
-
-            <button
-              className={`instructor-nav-link ${page === "quizzes" ? "active" : ""}`}
-              onClick={() => {
-                setQuizCourseId("");
-                setExistingQuiz(null);
-                setQuizStatus("");
-                navigate("quizzes");
-              }}
-            >
-              Manage Quizzes
-            </button>
-          </nav>
+            <div className="topbar-page-title">
+              <span>Instructor Workspace</span>
+              <strong>
+                {page === "overview" && "Overview"}
+                {page === "courses" && "My Courses"}
+                {page === "create" && (editingId ? "Edit Course" : "Create Course")}
+                {page === "lessons" && "Manage Lessons"}
+                {page === "quizzes" && "Manage Quizzes"}
+              </strong>
+            </div>
+          </div>
 
           <div className="instructor-topbar-right">
             <div className="instructor-profile">
               <span className="instructor-avatar">{initials || "I"}</span>
-              <span className="instructor-profile-name">
-                {instructorName}
-              </span>
+              <span className="instructor-profile-name">{instructorName}</span>
             </div>
-
-            <button className="topbar-signout" onClick={signOut}>
-              Sign out
-            </button>
           </div>
         </header>
 
@@ -1179,7 +1593,14 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
           {page === "overview" && renderOverview()}
           {page === "courses" && renderCourses()}
           {page === "create" && renderCreateCourse()}
-          {page === "lessons" && renderLessons()}
+
+          {page === "lessons" && (
+            <>
+              {renderLessons()}
+              {renderLiveClasses()}
+            </>
+          )}
+
           {page === "quizzes" && renderQuizManager()}
 
           <footer className="instructor-footer">

@@ -130,6 +130,13 @@ exports.login = async (req, res) => {
       });
     }
 
+    // Prevent blocked users from logging in
+if (user.status === "blocked") {
+  return res.status(403).json({
+    message: "Your account has been blocked. Please contact the administrator.",
+  });
+}
+
     // Verify the password
     const passwordMatches = await bcrypt.compare(
       password,

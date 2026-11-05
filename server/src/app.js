@@ -17,6 +17,8 @@ const progressRoutes = require("./routes/progressRoutes");
 const courseRoutes = require("./routes/courseRoutes");
 const quizRoutes = require("./routes/quizRoutes");
 const certificateRoutes = require("./routes/certificateRoutes");
+const liveClassRoutes = require("./routes/liveClassRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 // Middleware
 app.use(cors({ origin: "http://localhost:5173" }));
@@ -39,6 +41,18 @@ app.use("/api/quizzes", quizRoutes);
 
 // Certificate routes
 app.use("/api/certificates", certificateRoutes);
+
+// Live Class routes
+app.use("/api/live-classes", liveClassRoutes);
+
+// admin routes
+app.use("/api/admin", adminRoutes);
+
+console.log("Admin routes loaded:", typeof adminRoutes);
+
+app.get("/api/admin/test", (req, res) => {
+  res.json({ message: "Admin route is working!" });
+});
 
 // Test route
 app.get("/", (req, res) => {

@@ -3,12 +3,15 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import InstructorDashboard from "./InstructorDashboard";
 import Quiz from "./Quiz";
+import LiveClassroom from "./LiveClassroom";
+import AdminDashboard from "./AdminDashboard";
 
 const API_URL = "http://localhost:5000/api/auth";
 const COURSES_API_URL = "http://localhost:5000/api/courses";
 const ENROLLMENT_API_URL = "http://localhost:5000/api/enrollments";
 const PROGRESS_API_URL = "http://localhost:5000/api/progress";
 const CERTIFICATE_API_URL = "http://localhost:5000/api/certificates";
+const LIVE_CLASSES_API_URL = "http://localhost:5000/api/live-classes";
 
 const VALID_ROLES = ["student", "instructor", "admin"];
 
@@ -300,6 +303,7 @@ const courseLearning = {
 
 function App() {
   const [page, setPage] = useState(getInitialPage);
+  const [activeStudentPage, setActiveStudentPage] = useState("dashboard");
 
   const [courseSearch, setCourseSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -340,6 +344,12 @@ function App() {
   const [isDownloadingCertificate, setIsDownloadingCertificate] = useState(false);
   const [certificateMessage, setCertificateMessage] = useState("");
   const [certificateMessageType, setCertificateMessageType] = useState("");
+
+  // Student live-class state.
+  const [liveClasses, setLiveClasses] = useState([]);
+  const [isLoadingLiveClasses, setIsLoadingLiveClasses] = useState(false);
+  const [liveClassesError, setLiveClassesError] = useState("");
+  const [activeLiveClass, setActiveLiveClass] = useState(null);
 
   // Actual lessons fetched from the instructor-created course.
   const [serverLessons, setServerLessons] = useState([]);
@@ -402,6 +412,7 @@ function App() {
     setLoadedLessonsCourseId("");
     setEnrollmentMessage("");
     setEnrollmentMessageType("");
+    setActiveStudentPage("dashboard");
 
     switchPage("login");
   };
@@ -524,6 +535,7 @@ function App() {
       setSelectedCourse(null);
       setCompletedLessons({});
       setPage(userRole);
+      setActiveStudentPage("dashboard");
       setMessage("");
       setMessageType("");
     } catch (error) {
@@ -648,6 +660,67 @@ function App() {
     };
 
     loadEnrollments();
+
+    return () => controller.abort();
+  }, [page]);
+
+  // Load live classes available to the enrolled student.
+  useEffect(() => {
+    if (page !== "student") return;
+
+    const token = localStorage.getItem("lmsToken");
+
+    if (!token) {
+      setLiveClasses([]);
+      setLiveClassesError("Please sign in to view live classes.");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadLiveClasses = async () => {
+      setIsLoadingLiveClasses(true);
+      setLiveClassesError("");
+
+      try {
+        const response = await fetch(`${LIVE_CLASSES_API_URL}/student`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.message || "Unable to load live classes.");
+        }
+
+        const classes = Array.isArray(data.liveClasses)
+          ? data.liveClasses
+          : Array.isArray(data.classes)
+            ? data.classes
+            : Array.isArray(data)
+              ? data
+              : [];
+
+        if (!controller.signal.aborted) {
+          setLiveClasses(classes);
+        }
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          setLiveClassesError(
+            error.message || "Unable to load live classes."
+          );
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingLiveClasses(false);
+        }
+      }
+    };
+
+    loadLiveClasses();
 
     return () => controller.abort();
   }, [page]);
@@ -1016,6 +1089,16 @@ function App() {
     }
   };
 
+  // Open the selected live classroom.
+  const handleJoinLiveClass = (liveClass) => {
+    setActiveLiveClass(liveClass);
+  };
+
+  // Return from the live classroom to the student dashboard.
+  const handleExitStudentClassroom = () => {
+    setActiveLiveClass(null);
+  };
+
   // Instructor dashboard.
   if (page === "instructor") {
     let user = null;
@@ -1030,62 +1113,36 @@ function App() {
   }
 
   // Admin dashboard.
-  if (page === "admin") {
-    let user = null;
+ if (page === "admin") {
+  let user = null;
 
-    try {
-      user = JSON.parse(localStorage.getItem("lmsUser") || "null");
-    } catch {
-      user = null;
-    }
-
-    return (
-      <main className="auth-page">
-        <section className="form-panel">
-          <div className="form-container">
-            <div className="mobile-brand">
-              <span className="brand-icon">L</span>
-              <span>LearnSpace</span>
-            </div>
-
-            <div className="form-heading">
-              <span className="form-eyebrow">PLATFORM MANAGEMENT</span>
-              <h2>Admin Dashboard</h2>
-              <p>
-                {user?.name
-                  ? `Welcome, ${user.name}!`
-                  : "Welcome to LearnSpace!"}
-              </p>
-              <p>Manage users, courses, and the LearnSpace platform.</p>
-              <p><strong>Role:</strong> admin</p>
-            </div>
-
-            <div className="dashboard-features">
-              {["Manage Users", "Manage Courses", "Platform Overview"].map(
-                (feature) => (
-                  <div className="benefit" key={feature}>
-                    <span className="benefit-check">✓</span>
-                    {feature}
-                  </div>
-                )
-              )}
-            </div>
-
-            <button
-              type="button"
-              className="submit-button"
-              onClick={handleSignOut}
-            >
-              Sign out <span aria-hidden="true">→</span>
-            </button>
-          </div>
-        </section>
-      </main>
-    );
+  try {
+    user = JSON.parse(localStorage.getItem("lmsUser") || "null");
+  } catch {
+    user = null;
   }
+
+  return (
+    <AdminDashboard
+      user={user}
+      onSignOut={handleSignOut}
+    />
+  );
+}
 
   // Student dashboard.
   if (page === "student") {
+
+  // Show the live classroom when the student joins a live session.
+  if (activeLiveClass) {
+  return (
+    <LiveClassroom
+      liveClassId={activeLiveClass._id}
+      liveClassTitle={activeLiveClass.title}
+      onExit={handleExitStudentClassroom}
+    />
+  );
+}
 
   // Quiz screen
   if (showQuiz && selectedCourse) {
@@ -1716,29 +1773,99 @@ function App() {
     // Student dashboard.
     return (
       <main className="student-dashboard">
-        <header className="student-topbar">
-          <a
-            className="student-brand"
-            href="#dashboard"
-            onClick={(event) => event.preventDefault()}
-          >
-            <span className="brand-icon">L</span>
-            <span>LearnSpace</span>
-          </a>
-
-          <div className="student-topbar-right">
-            <span className="student-role-pill">Student</span>
-            <button
-              type="button"
-              className="student-signout"
-              onClick={handleSignOut}
+        <div className="student-dashboard-shell">
+          <aside className="student-sidebar">
+            <a
+              className="student-sidebar-brand"
+              href="#student-overview"
+              onClick={(event) => event.preventDefault()}
             >
-              Sign out
-            </button>
-          </div>
-        </header>
+              <span className="student-sidebar-logo">L</span>
+              <span>LearnSpace</span>
+            </a>
 
-        <section className="student-dashboard-content">
+            <p className="student-sidebar-label">LEARNING MENU</p>
+            <nav className="student-sidebar-nav" aria-label="Student dashboard navigation">
+              <button
+                type="button"
+                className={`student-sidebar-link ${activeStudentPage === "dashboard" ? "active" : ""}`}
+                onClick={() => setActiveStudentPage("dashboard")}
+              >
+                <span aria-hidden="true">⌂</span>
+                <span>Dashboard</span>
+              </button>
+              <button
+                type="button"
+                className={`student-sidebar-link ${activeStudentPage === "live-classes" ? "active" : ""}`}
+                onClick={() => setActiveStudentPage("live-classes")}
+              >
+                <span aria-hidden="true">▣</span>
+                <span>Live Classes</span>
+              </button>
+              <button
+                type="button"
+                className={`student-sidebar-link ${activeStudentPage === "my-learning" ? "active" : ""}`}
+                onClick={() => setActiveStudentPage("my-learning")}
+              >
+                <span aria-hidden="true">▤</span>
+                <span>My Learning</span>
+              </button>
+              <button
+                type="button"
+                className={`student-sidebar-link ${activeStudentPage === "explore-courses" ? "active" : ""}`}
+                onClick={() => setActiveStudentPage("explore-courses")}
+              >
+                <span aria-hidden="true">⌕</span>
+                <span>Explore Courses</span>
+              </button>
+              <button
+                type="button"
+                className={`student-sidebar-link ${activeStudentPage === "certificates" ? "active" : ""}`}
+                onClick={() => setActiveStudentPage("certificates")}
+              >
+                <span aria-hidden="true">🏆</span>
+                <span>Certificates</span>
+              </button>
+            </nav>
+
+            <div className="student-sidebar-bottom">
+              <div className="student-sidebar-tip">
+                <span aria-hidden="true">✨</span>
+                <strong>Keep growing!</strong>
+                <small>Every lesson brings you closer to your goals.</small>
+              </div>
+              <button
+                type="button"
+                className="student-sidebar-signout"
+                onClick={handleSignOut}
+              >
+                <span aria-hidden="true">↪</span> Sign out
+              </button>
+            </div>
+          </aside>
+
+          <div className="student-main-area">
+            <header className="student-topbar">
+              <div className="student-topbar-heading">
+                <span className="student-topbar-eyebrow">STUDENT PORTAL</span>
+                <strong>
+                  {{
+                    dashboard: "Dashboard",
+                    "live-classes": "Live Classes",
+                    "my-learning": "My Learning",
+                    "explore-courses": "Explore Courses",
+                    certificates: "Certificates",
+                  }[activeStudentPage]}
+                </strong>
+              </div>
+              <div className="student-topbar-right">
+                <span className="student-role-pill">Student</span>
+              </div>
+            </header>
+
+            <section className="student-dashboard-content" id="student-overview">
+          {activeStudentPage === "dashboard" && (
+          <>
           <div className="student-welcome">
             <div>
               <span className="student-eyebrow">YOUR LEARNING SPACE</span>
@@ -1779,7 +1906,144 @@ function App() {
             </div>
           </section>
 
-          <section className="student-courses-section">
+          <section className="student-quick-actions" aria-label="Dashboard quick actions">
+            <button type="button" className="student-quick-action" onClick={() => setActiveStudentPage("my-learning")}>
+              <span>📚</span>
+              <strong>Continue learning</strong>
+              <small>Open your enrolled courses</small>
+              <b aria-hidden="true">→</b>
+            </button>
+            <button type="button" className="student-quick-action" onClick={() => setActiveStudentPage("explore-courses")}>
+              <span>🔎</span>
+              <strong>Discover courses</strong>
+              <small>Find your next skill to learn</small>
+              <b aria-hidden="true">→</b>
+            </button>
+            <button type="button" className="student-quick-action" onClick={() => setActiveStudentPage("live-classes")}>
+              <span>🎥</span>
+              <strong>Join live classes</strong>
+              <small>Learn with your instructors</small>
+              <b aria-hidden="true">→</b>
+            </button>
+          </section>
+          </>
+          )}
+
+          {activeStudentPage === "live-classes" && (
+          <section className="student-courses-section" id="live-classes">
+            <div className="student-courses-heading">
+              <div>
+                <span className="student-eyebrow">LEARN TOGETHER</span>
+                <h2>My Live Classes</h2>
+                <p>Attend real-time sessions with your instructors.</p>
+              </div>
+
+              <span className="student-role-pill">
+                {liveClasses.length}{" "}
+                {liveClasses.length === 1 ? "Session" : "Sessions"}
+              </span>
+            </div>
+
+            {isLoadingLiveClasses && (
+              <p role="status">Loading live classes...</p>
+            )}
+
+            {liveClassesError && (
+              <p role="alert" className="form-message">
+                {liveClassesError}
+              </p>
+            )}
+
+            {!isLoadingLiveClasses &&
+              !liveClassesError &&
+              liveClasses.length === 0 && (
+                <div className="student-empty-state">
+                  <span aria-hidden="true">🎥</span>
+                  <h3>No live classes scheduled</h3>
+                  <p>
+                    Your instructor's upcoming live sessions will appear here.
+                  </p>
+                </div>
+              )}
+
+            <div className="student-course-grid">
+              {liveClasses.map((liveClass) => {
+                const status = String(liveClass.status || "scheduled").toLowerCase();
+                const isLive = status === "live";
+                const isScheduled = status === "scheduled";
+                const isUnavailable =
+                  status === "completed" || status === "cancelled";
+
+                return (
+                  <article
+                    className="student-course-card"
+                    key={liveClass._id || liveClass.id || liveClass.roomName}
+                  >
+                    <div className="student-course-art">
+                      <span className="student-course-icon" aria-hidden="true">
+                        🎥
+                      </span>
+                      <span className="student-course-category">
+                        {liveClass.courseTitle || "Live Session"}
+                      </span>
+                    </div>
+
+                    <div className="student-course-body">
+                      <div className="student-course-meta">
+                        <span>
+                          {isLive ? "🔴 Live Now" : status}
+                        </span>
+                        <span>{liveClass.duration || 60} minutes</span>
+                      </div>
+
+                      <h3>{liveClass.title || "Live Class"}</h3>
+                      <p>
+                        {liveClass.description ||
+                          "Join your instructor for this live learning session."}
+                      </p>
+                      <p>
+                        <strong>Instructor:</strong>{" "}
+                        {liveClass.instructorName || "Instructor"}
+                      </p>
+                      <p>
+                        <strong>Scheduled:</strong>{" "}
+                        {liveClass.scheduledAt
+                          ? new Date(liveClass.scheduledAt).toLocaleString()
+                          : "Not specified"}
+                      </p>
+
+                      <div className="student-course-footer">
+                        {isLive ? (
+                          <button
+                            type="button"
+                            className="student-course-action"
+                            onClick={() => handleJoinLiveClass(liveClass)}
+                          >
+                            Join Classroom →
+                          </button>
+                        ) : isScheduled ? (
+                          <span className="student-role-pill">Upcoming</span>
+                        ) : (
+                          <span className="student-role-pill">
+                            {status}
+                          </span>
+                        )}
+                      </div>
+
+                      {isUnavailable && (
+                        <p>This session is no longer available to join.</p>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          )}
+
+          {activeStudentPage === "my-learning" && (
+          <section className="student-courses-section" id="my-learning">
             <div className="student-courses-heading">
               <div>
                 <span className="student-eyebrow">
@@ -1893,7 +2157,10 @@ function App() {
             )}
           </section>
 
-          <section className="student-courses-section">
+          )}
+
+          {activeStudentPage === "explore-courses" && (
+          <section className="student-courses-section" id="explore-courses">
             <div className="student-courses-heading">
               <div>
                 <span className="student-eyebrow">GROW YOUR SKILLS</span>
@@ -2014,7 +2281,85 @@ function App() {
               </div>
             )}
           </section>
-        </section>
+          )}
+
+          {activeStudentPage === "certificates" && (
+            <section className="student-courses-section student-page-panel">
+              <div className="student-courses-heading">
+                <div>
+                  <span className="student-eyebrow">YOUR ACHIEVEMENTS</span>
+                  <h2>My Certificates</h2>
+                  <p>Complete a course to unlock its certificate.</p>
+                </div>
+                <span className="student-role-pill">
+                  {enrollments.length} enrolled {enrollments.length === 1 ? "course" : "courses"}
+                </span>
+              </div>
+
+              {isLoadingEnrollments ? (
+                <p role="status">Loading your courses...</p>
+              ) : enrollments.length === 0 ? (
+                <div className="student-empty-state">
+                  <span aria-hidden="true">🏆</span>
+                  <h3>No certificates yet</h3>
+                  <p>Enroll in a course and complete all its lessons to become eligible for a certificate.</p>
+                  <button
+                    type="button"
+                    className="student-course-action"
+                    onClick={() => setActiveStudentPage("explore-courses")}
+                  >
+                    Explore courses →
+                  </button>
+                </div>
+              ) : (
+                <div className="student-course-grid">
+                  {enrollments.map((enrollment) => {
+                    const course =
+                      courses.find((item) => getCourseId(item) === String(enrollment.courseId)) ||
+                      SAMPLE_COURSES.find((item) => getCourseId(item) === String(enrollment.courseId)) ||
+                      null;
+
+                    return (
+                      <article
+                        className="student-course-card certificate-course-card"
+                        key={`certificate-${enrollment.courseId}-${enrollment._id || ""}`}
+                      >
+                        <div className="student-course-art">
+                          <span className="student-course-icon" aria-hidden="true">🏆</span>
+                          <span className="student-course-category">Course achievement</span>
+                        </div>
+                        <div className="student-course-body">
+                          <h3>{course?.title || enrollment.courseTitle || "Enrolled course"}</h3>
+                          <p>Finish all lessons in this course to unlock and download your certificate.</p>
+                          <div className="student-course-footer">
+                            <span>Certificate status: check course progress</span>
+                            {course ? (
+                              <button
+                                type="button"
+                                className="student-course-action"
+                                onClick={() => {
+                                  setSelectedCourse(course);
+                                  setEnrollmentMessage("");
+                                  setEnrollmentMessageType("");
+                                }}
+                              >
+                                View course →
+                              </button>
+                            ) : (
+                              <span className="student-role-pill">Course unavailable</span>
+                            )}
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+            </section>
+          </div>
+        </div>
       </main>
     );
   }
