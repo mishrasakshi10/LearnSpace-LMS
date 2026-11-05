@@ -5,6 +5,7 @@ import InstructorDashboard from "./InstructorDashboard";
 import Quiz from "./Quiz";
 import LiveClassroom from "./LiveClassroom";
 import AdminDashboard from "./AdminDashboard";
+import Logo from "./Logo";
 
 const API_URL = "http://localhost:5000/api/auth";
 const COURSES_API_URL = "http://localhost:5000/api/courses";
@@ -1607,28 +1608,28 @@ function App() {
                       </div>
                     </div>
 
-                    {completedForCourse.length === lessons.length ? (
-                      <button
-                        type="button"
-                        className="take-quiz-btn"
-                        onClick={() => setShowQuiz(true)}
-                      >
-                        Start Quiz <span>→</span>
-                      </button>
-                    ) : (
-                      <button
+                   
+<button
   type="button"
   className="take-quiz-btn"
-  disabled={completedForCourse.length !== lessons.length || lessons.length === 0}
+  disabled={
+    lessons.length === 0 ||
+    completedForCourse.length !== lessons.length
+  }
   onClick={() => setShowQuiz(true)}
 >
-  {completedForCourse.length === lessons.length && lessons.length > 0
-    ? "Start Quiz →"
+  {lessons.length > 0 &&
+  completedForCourse.length === lessons.length
+    ? (
+      <>
+        Start Quiz <span>→</span>
+      </>
+    )
     : "🔒 Complete all lessons first"}
 </button>
-                    )}
-                  </section>
-                )}
+</section>
+)}
+
 
                 {/* Certificate section - shown after all lessons are completed */}
                 {isCourseEnrolled &&
@@ -1776,14 +1777,12 @@ function App() {
         <div className="student-dashboard-shell">
           <aside className="student-sidebar">
             <a
-              className="student-sidebar-brand"
-              href="#student-overview"
-              onClick={(event) => event.preventDefault()}
-            >
-              <span className="student-sidebar-logo">L</span>
-              <span>LearnSpace</span>
-            </a>
-
+  className="student-sidebar-brand"
+  href="#student-overview"
+  onClick={(event) => event.preventDefault()}
+>
+  <Logo width={150} />
+</a>
             <p className="student-sidebar-label">LEARNING MENU</p>
             <nav className="student-sidebar-nav" aria-label="Student dashboard navigation">
               <button
@@ -2079,16 +2078,11 @@ function App() {
               <div className="student-course-grid">
                 {enrollments.map((enrollment) => {
                   const course =
-                    courses.find(
-                      (item) =>
-                        getCourseId(item) === String(enrollment.courseId)
-                    ) ||
-                    SAMPLE_COURSES.find(
-                      (item) =>
-                        getCourseId(item) === String(enrollment.courseId)
-                    ) ||
-                    null;
-
+  courses.find(
+    (item) =>
+      getCourseId(item) === String(enrollment.courseId)
+  ) || null;
+const isUnavailable = !course;
                   return (
                     <article
                       className="student-course-card"
@@ -2112,7 +2106,9 @@ function App() {
 
                       <div className="student-course-body">
                         <div className="student-course-meta">
-                          <span>{enrollment.status || "enrolled"}</span>
+                          <span>
+                             {course ? enrollment.status || "Enrolled" : "Unavailable"}
+                          </span>
                           <span>{course?.duration || "Course"}</span>
                         </div>
 
@@ -2130,6 +2126,8 @@ function App() {
                         <div className="student-course-footer">
                           <span>Saved to your learning space</span>
 
+                          
+
                           {course ? (
                             <button
                               type="button"
@@ -2145,7 +2143,7 @@ function App() {
                             </button>
                           ) : (
                             <span className="student-role-pill">
-                              Enrolled
+                              Course unavailable
                             </span>
                           )}
                         </div>
@@ -2315,10 +2313,9 @@ function App() {
                 <div className="student-course-grid">
                   {enrollments.map((enrollment) => {
                     const course =
-                      courses.find((item) => getCourseId(item) === String(enrollment.courseId)) ||
-                      SAMPLE_COURSES.find((item) => getCourseId(item) === String(enrollment.courseId)) ||
-                      null;
-
+  courses.find(
+    (item) => getCourseId(item) === String(enrollment.courseId)
+  ) || null;
                     return (
                       <article
                         className="student-course-card certificate-course-card"

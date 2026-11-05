@@ -3130,3 +3130,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   }
 }
 
+.learnspace-logo {
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.learnspace-logo {
+  height: auto;
+  max-height: 55px;
+  width: 150px;
+  object-fit: contain;
+  display: block;
+  background: white;
+  padding: 10px;
+  border-radius: 8px;
+}

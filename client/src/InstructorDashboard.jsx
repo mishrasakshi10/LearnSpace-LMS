@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import "./InstructorDashboard.css";
 import LiveClassroom from "./LiveClassroom";
+import Logo from "./Logo";
 
 const API_URL = "http://localhost:5000/api/courses";
 const QUIZ_API_URL = "http://localhost:5000/api/quizzes";
@@ -1470,8 +1471,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
           className="instructor-brand"
           onClick={() => navigate("overview")}
         >
-          <span className="instructor-brand-mark">L</span>
-          <span>LearnSpace</span>
+          <Logo width={150} />
         </button>
 
         <div className="sidebar-menu-label">MAIN MENU</div>
