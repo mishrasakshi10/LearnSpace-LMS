@@ -38,7 +38,7 @@ LearnSpace LMS is a web-based Learning Management System built to simplify onlin
 ![Student Dashboard](Screenshots/student-dashboard.png)
 
 ### Instructor Dashboard
-![Instructor Dashboard](Screenshots/instructor-dashboard.png)
+![Instructor Dashboard](Screenshots/Instructorsdashboard.png)
 
 ### Admin Dashboard
 ![Admin Dashboard](Screenshots/admin-dashboard.png)
