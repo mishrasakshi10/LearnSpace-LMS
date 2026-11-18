@@ -21,7 +21,9 @@ const liveClassRoutes = require("./routes/liveClassRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 
 // Middleware
-app.use(cors({ origin: "http://localhost:5173" }));
+app.use(cors({
+  origin: process.env.CLIENT_URL || "http://localhost:5173"
+}));
 app.use(express.json());
 
 // API routes
