@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import "./App.css";
 import InstructorDashboard from "./InstructorDashboard";
@@ -12,6 +11,7 @@ const COURSES_API_URL = "http://localhost:5000/api/courses";
 const ENROLLMENT_API_URL = "http://localhost:5000/api/enrollments";
 const PROGRESS_API_URL = "http://localhost:5000/api/progress";
 const CERTIFICATE_API_URL = "http://localhost:5000/api/certificates";
+const PAYMENT_API_URL = "http://localhost:5000/api/payments";
 const LIVE_CLASSES_API_URL = "http://localhost:5000/api/live-classes";
 
 const VALID_ROLES = ["student", "instructor", "admin"];
@@ -79,7 +79,6 @@ const SAMPLE_COURSES = [
   },
 ];
 
-// Use the same ID format for courses returned by the backend.
 function getCourseId(course) {
   return String(course?.courseId || course?._id || course?.id || "");
 }
@@ -142,7 +141,6 @@ function getInitialPage() {
   }
 }
 
-// Sample lessons are used only for the six built-in sample courses.
 const lessonMaterials = {
   1: [
     {
@@ -315,6 +313,10 @@ function App() {
   const [courseLoadError, setCourseLoadError] = useState("");
   const [showQuiz, setShowQuiz] = useState(false);
 
+
+const [showDemoCheckout, setShowDemoCheckout] = useState(false);
+
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -341,18 +343,15 @@ function App() {
   const [progressMessage, setProgressMessage] = useState("");
   const [progressMessageType, setProgressMessageType] = useState("");
 
-  // Certificate download state.
   const [isDownloadingCertificate, setIsDownloadingCertificate] = useState(false);
   const [certificateMessage, setCertificateMessage] = useState("");
   const [certificateMessageType, setCertificateMessageType] = useState("");
 
-  // Student live-class state.
   const [liveClasses, setLiveClasses] = useState([]);
   const [isLoadingLiveClasses, setIsLoadingLiveClasses] = useState(false);
   const [liveClassesError, setLiveClassesError] = useState("");
   const [activeLiveClass, setActiveLiveClass] = useState(null);
 
-  // Actual lessons fetched from the instructor-created course.
   const [serverLessons, setServerLessons] = useState([]);
   const [loadedLessonsCourseId, setLoadedLessonsCourseId] = useState("");
   const [isLoadingCourseLessons, setIsLoadingCourseLessons] = useState(false);
@@ -418,7 +417,6 @@ function App() {
     switchPage("login");
   };
 
-  // Registration and login.
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -550,7 +548,6 @@ function App() {
     }
   };
 
-  // Load courses from the backend.
   useEffect(() => {
     if (page !== "student") return;
 
@@ -607,7 +604,6 @@ function App() {
     return () => controller.abort();
   }, [page]);
 
-  // Load the student's enrollments.
   useEffect(() => {
     if (page !== "student") return;
 
@@ -665,7 +661,6 @@ function App() {
     return () => controller.abort();
   }, [page]);
 
-  // Load live classes available to the enrolled student.
   useEffect(() => {
     if (page !== "student") return;
 
@@ -726,7 +721,6 @@ function App() {
     return () => controller.abort();
   }, [page]);
 
-  // Load the complete course, including lessons added by its instructor.
   useEffect(() => {
     if (page !== "student" || !selectedCourse) {
       setServerLessons([]);
@@ -800,7 +794,6 @@ function App() {
     return () => controller.abort();
   }, [page, selectedCourse]);
 
-  // Load saved lesson progress for the selected course.
   useEffect(() => {
     if (page !== "student" || !selectedCourse) {
       setProgressMessage("");
@@ -868,7 +861,6 @@ function App() {
     return () => controller.abort();
   }, [page, selectedCourse]);
 
-  // Determine whether the selected course is already enrolled.
   const isCourseEnrolled = selectedCourse
     ? enrollments.some(
         (enrollment) =>
@@ -876,9 +868,20 @@ function App() {
       )
     : false;
 
-  // Enroll the logged-in student.
+  // The enrollment and demo-payment handlers continue in Part 2.
+    // Enroll the logged-in student.
+  // Free courses enroll directly. Paid courses first open the demo checkout.
   const handleEnroll = async () => {
     if (!selectedCourse || isEnrolling || isCourseEnrolled) return;
+
+    const price = Number(selectedCourse.price || 0);
+
+    if (price > 0) {
+      setShowDemoCheckout(true);
+      setEnrollmentMessage("");
+      setEnrollmentMessageType("");
+      return;
+    }
 
     const token = localStorage.getItem("lmsToken");
 
@@ -969,6 +972,95 @@ function App() {
     }
   };
 
+  // Simulate a payment for a paid course.
+  // This is a project demonstration only; no real money is collected.
+  const handleDemoPayment = async (outcome) => {
+    if (!selectedCourse || isEnrolling || isCourseEnrolled) return;
+
+    const token = localStorage.getItem("lmsToken");
+
+    if (!token) {
+      setEnrollmentMessage("Please sign in before making a payment.");
+      setEnrollmentMessageType("error");
+      return;
+    }
+
+    setIsEnrolling(true);
+    setEnrollmentMessage("");
+    setEnrollmentMessageType("");
+
+    try {
+      const response = await fetch(
+        `${PAYMENT_API_URL}/demo-checkout`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            courseId: getCourseId(selectedCourse),
+            outcome,
+          }),
+        }
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.message || "Demo payment could not be processed.");
+      }
+
+      if (outcome === "success") {
+        if (data.enrollment) {
+          setEnrollments((previous) => {
+            const exists = previous.some(
+              (enrollment) =>
+                String(enrollment.courseId) ===
+                String(data.enrollment.courseId)
+            );
+
+            return exists ? previous : [...previous, data.enrollment];
+          });
+        } else {
+          const refreshResponse = await fetch(ENROLLMENT_API_URL, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const refreshedData = await refreshResponse
+            .json()
+            .catch(() => ({}));
+
+          if (refreshResponse.ok) {
+            setEnrollments(refreshedData.enrollments || []);
+          }
+        }
+
+        setShowDemoCheckout(false);
+        setEnrollmentMessage(
+          data.message || "Demo payment successful! You are now enrolled."
+        );
+        setEnrollmentMessageType("success");
+      } else {
+        setEnrollmentMessage(
+          data.message || "Demo payment failed. You have not been enrolled."
+        );
+        setEnrollmentMessageType("error");
+      }
+    } catch (error) {
+      setEnrollmentMessage(
+        error.message === "Failed to fetch"
+          ? "Cannot connect to the payment server. Please try again."
+          : error.message || "Demo payment failed."
+      );
+      setEnrollmentMessageType("error");
+    } finally {
+      setIsEnrolling(false);
+    }
+  };
+
   // Save or remove a completed lesson.
   const toggleLessonComplete = async (
     courseId,
@@ -1053,6 +1145,7 @@ function App() {
     try {
       const response = await fetch(
         `${CERTIFICATE_API_URL}/${encodeURIComponent(courseId)}`,
+        
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -1090,17 +1183,14 @@ function App() {
     }
   };
 
-  // Open the selected live classroom.
   const handleJoinLiveClass = (liveClass) => {
     setActiveLiveClass(liveClass);
   };
 
-  // Return from the live classroom to the student dashboard.
   const handleExitStudentClassroom = () => {
     setActiveLiveClass(null);
   };
 
-  // Instructor dashboard.
   if (page === "instructor") {
     let user = null;
 
@@ -1113,47 +1203,42 @@ function App() {
     return <InstructorDashboard user={user} onSignOut={handleSignOut} />;
   }
 
-  // Admin dashboard.
- if (page === "admin") {
-  let user = null;
+  if (page === "admin") {
+    let user = null;
 
-  try {
-    user = JSON.parse(localStorage.getItem("lmsUser") || "null");
-  } catch {
-    user = null;
-  }
+    try {
+      user = JSON.parse(localStorage.getItem("lmsUser") || "null");
+    } catch {
+      user = null;
+    }
 
-  return (
-    <AdminDashboard
-      user={user}
-      onSignOut={handleSignOut}
-    />
-  );
-}
-
-  // Student dashboard.
-  if (page === "student") {
-
-  // Show the live classroom when the student joins a live session.
-  if (activeLiveClass) {
-  return (
-    <LiveClassroom
-      liveClassId={activeLiveClass._id}
-      liveClassTitle={activeLiveClass.title}
-      onExit={handleExitStudentClassroom}
-    />
-  );
-}
-
-  // Quiz screen
-  if (showQuiz && selectedCourse) {
     return (
-      <Quiz
-        courseId={getCourseId(selectedCourse)}
-        onBack={() => setShowQuiz(false)}
+      <AdminDashboard
+        user={user}
+        onSignOut={handleSignOut}
       />
     );
   }
+
+  if (page === "student") {
+    if (activeLiveClass) {
+      return (
+        <LiveClassroom
+          liveClassId={activeLiveClass._id}
+          liveClassTitle={activeLiveClass.title}
+          onExit={handleExitStudentClassroom}
+        />
+      );
+    }
+
+    if (showQuiz && selectedCourse) {
+      return (
+        <Quiz
+          courseId={getCourseId(selectedCourse)}
+          onBack={() => setShowQuiz(false)}
+        />
+      );
+    }
 
     let student = null;
 
@@ -1193,7 +1278,6 @@ function App() {
       return matchesSearch && matchesCategory;
     });
 
-    // Selected course detail page.
     if (selectedCourse) {
       const selectedCourseId = getCourseId(selectedCourse);
       const sampleCourse = SAMPLE_COURSES.find(
@@ -1202,8 +1286,6 @@ function App() {
 
       const isSampleCourse = Boolean(sampleCourse);
 
-      // Use backend lessons when available. Sample courses use local sample
-      // lessons only if the backend has not returned any lessons.
       const lessons =
         loadedLessonsCourseId === selectedCourseId
           ? serverLessons
@@ -1255,6 +1337,7 @@ function App() {
               onClick={(event) => {
                 event.preventDefault();
                 setSelectedCourse(null);
+                setShowDemoCheckout(false);
               }}
             >
               <span className="brand-icon">L</span>
@@ -1277,7 +1360,10 @@ function App() {
             <button
               type="button"
               className="course-detail-back"
-              onClick={() => setSelectedCourse(null)}
+              onClick={() => {
+                setSelectedCourse(null);
+                setShowDemoCheckout(false);
+              }}
             >
               <span aria-hidden="true">←</span> Back to courses
             </button>
@@ -1353,7 +1439,6 @@ function App() {
                     materials below.
                   </p>
                 </section>
-
 
                 {outcomes.length > 0 && (
                   <section className="course-detail-panel">
@@ -1589,13 +1674,12 @@ function App() {
                     </>
                   )}
 
-                                   <p className="course-preview-notice">
+                  <p className="course-preview-notice">
                     Lesson progress is saved to your account and loaded from
                     the server.
                   </p>
                 </section>
 
-                {/* Quiz section - visible only after all lessons are completed */}
                 {isCourseEnrolled && (
                   <section className="take-quiz-card">
                     <div className="take-quiz-info">
@@ -1608,30 +1692,27 @@ function App() {
                       </div>
                     </div>
 
-                   
-<button
-  type="button"
-  className="take-quiz-btn"
-  disabled={
-    lessons.length === 0 ||
-    completedForCourse.length !== lessons.length
-  }
-  onClick={() => setShowQuiz(true)}
->
-  {lessons.length > 0 &&
-  completedForCourse.length === lessons.length
-    ? (
-      <>
-        Start Quiz <span>→</span>
-      </>
-    )
-    : "🔒 Complete all lessons first"}
-</button>
-</section>
-)}
+                    <button
+                      type="button"
+                      className="take-quiz-btn"
+                      disabled={
+                        lessons.length === 0 ||
+                        completedForCourse.length !== lessons.length
+                      }
+                      onClick={() => setShowQuiz(true)}
+                    >
+                      {lessons.length > 0 &&
+                      completedForCourse.length === lessons.length
+                        ? (
+                          <>
+                            Start Quiz <span>→</span>
+                          </>
+                        )
+                        : "🔒 Complete all lessons first"}
+                    </button>
+                  </section>
+                )}
 
-
-                {/* Certificate section - shown after all lessons are completed */}
                 {isCourseEnrolled &&
                   lessons.length > 0 &&
                   loadedLessonsCourseId === selectedCourseId &&
@@ -1696,6 +1777,15 @@ function App() {
                     : "Enroll now to add this course to your learning journey."}
                 </p>
 
+                <div className="course-sidebar-detail">
+                  <span>Course price</span>
+                  <strong>
+                    {Number(selectedCourse.price || 0) > 0
+                      ? `₹${Number(selectedCourse.price).toLocaleString("en-IN")}`
+                      : "Free"}
+                  </strong>
+                </div>
+
                 {isLoadingEnrollments && (
                   <p role="status">Checking your enrollment...</p>
                 )}
@@ -1734,11 +1824,92 @@ function App() {
                   style={{ marginTop: "16px" }}
                 >
                   {isEnrolling
-                    ? "Enrolling..."
+                    ? "Processing..."
                     : isCourseEnrolled
                       ? "Already enrolled ✓"
-                      : "Enroll in this course"}
+                      : Number(selectedCourse.price || 0) > 0
+                        ? "Proceed to payment"
+                        : "Enroll in this course"}
                 </button>
+
+                {showDemoCheckout && !isCourseEnrolled && (
+                  <div
+                    className="demo-checkout-panel"
+                    style={{
+                      marginTop: "18px",
+                      padding: "18px",
+                      border: "1px solid #ddd6fe",
+                      borderRadius: "12px",
+                      background: "#faf9ff",
+                    }}
+                  >
+                    <h3 style={{ marginTop: 0 }}>Demo Checkout</h3>
+
+                    <p style={{ fontWeight: 700, fontSize: "20px" }}>
+                      ₹{Number(selectedCourse.price || 0).toLocaleString("en-IN")}
+                    </p>
+
+                    <p
+                      style={{
+                        padding: "10px",
+                        borderRadius: "8px",
+                        background: "#fff7e6",
+                        color: "#8a5700",
+                        fontSize: "13px",
+                      }}
+                    >
+                      No Real Money — this is a simulated payment for project
+                      demonstration only. No actual charge will be made.
+                    </p>
+
+                    <button
+                      type="button"
+                      className="submit-button"
+                      onClick={() => handleDemoPayment("success")}
+                      disabled={isEnrolling}
+                      style={{ width: "100%", marginTop: "10px" }}
+                    >
+                      {isEnrolling
+                        ? "Processing..."
+                        : "Simulate Successful Payment"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDemoPayment("failed")}
+                      disabled={isEnrolling}
+                      style={{
+                        width: "100%",
+                        marginTop: "10px",
+                        padding: "12px",
+                        border: "1px solid #dc2626",
+                        borderRadius: "8px",
+                        background: "#fff",
+                        color: "#b91c1c",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Simulate Failed Payment
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowDemoCheckout(false)}
+                      disabled={isEnrolling}
+                      style={{
+                        width: "100%",
+                        marginTop: "8px",
+                        padding: "10px",
+                        border: "none",
+                        background: "transparent",
+                        color: "#5b556b",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Cancel checkout
+                    </button>
+                  </div>
+                )}
 
                 <div className="course-sidebar-divider" />
 
@@ -1760,7 +1931,10 @@ function App() {
                 <button
                   type="button"
                   className="course-sidebar-back"
-                  onClick={() => setSelectedCourse(null)}
+                  onClick={() => {
+                    setSelectedCourse(null);
+                    setShowDemoCheckout(false);
+                  }}
                 >
                   Explore other courses <span aria-hidden="true">→</span>
                 </button>
@@ -1770,21 +1944,25 @@ function App() {
         </main>
       );
     }
-
-    // Student dashboard.
+        // Student dashboard.
     return (
       <main className="student-dashboard">
         <div className="student-dashboard-shell">
           <aside className="student-sidebar">
             <a
-  className="student-sidebar-brand"
-  href="#student-overview"
-  onClick={(event) => event.preventDefault()}
->
-  <Logo width={150} />
-</a>
+              className="student-sidebar-brand"
+              href="#student-overview"
+              onClick={(event) => event.preventDefault()}
+            >
+              <Logo width={150} />
+            </a>
+
             <p className="student-sidebar-label">LEARNING MENU</p>
-            <nav className="student-sidebar-nav" aria-label="Student dashboard navigation">
+
+            <nav
+              className="student-sidebar-nav"
+              aria-label="Student dashboard navigation"
+            >
               <button
                 type="button"
                 className={`student-sidebar-link ${activeStudentPage === "dashboard" ? "active" : ""}`}
@@ -1793,14 +1971,17 @@ function App() {
                 <span aria-hidden="true">⌂</span>
                 <span>Dashboard</span>
               </button>
-              <button
-                type="button"
-                className={`student-sidebar-link ${activeStudentPage === "live-classes" ? "active" : ""}`}
-                onClick={() => setActiveStudentPage("live-classes")}
-              >
-                <span aria-hidden="true">▣</span>
-                <span>Live Classes</span>
-              </button>
+
+             
+<button
+  type="button"
+  className={`student-sidebar-link ${activeStudentPage === "live-classes" ? "active" : ""}`}
+  onClick={() => setActiveStudentPage("live-classes")}
+>
+  <span aria-hidden="true">▣</span>
+  <span>Live Classes</span>
+</button>
+
               <button
                 type="button"
                 className={`student-sidebar-link ${activeStudentPage === "my-learning" ? "active" : ""}`}
@@ -2125,8 +2306,6 @@ const isUnavailable = !course;
 
                         <div className="student-course-footer">
                           <span>Saved to your learning space</span>
-
-                          
 
                           {course ? (
                             <button

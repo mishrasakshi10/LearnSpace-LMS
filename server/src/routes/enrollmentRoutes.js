@@ -1,40 +1,74 @@
-
 const express = require("express");
 const router = express.Router();
 
 const Enrollment = require("../models/Enrollment");
+const Course = require("../models/Course");
+const Payment = require("../models/Payment");
 const authMiddleware = require("../middleware/authMiddleware");
 
+router.use(authMiddleware);
+
 // POST /api/enrollments
-// Enroll the currently logged-in student in a course
-router.post("/", authMiddleware, async (req, res) => {
+// Free courses can be enrolled in directly.
+// Paid courses must go through the demo checkout first.
+router.post("/", async (req, res) => {
   try {
-    // Only students can enroll
     if (req.user.role !== "student") {
       return res.status(403).json({
         message: "Only students can enroll in courses.",
       });
     }
 
-    const { courseId, courseTitle } = req.body;
+    const { courseId } = req.body;
 
-    if (
-      courseId === undefined ||
-      courseId === null ||
-      !String(courseId).trim() ||
-      typeof courseTitle !== "string" ||
-      !courseTitle.trim()
-    ) {
+    if (!courseId || !String(courseId).trim()) {
       return res.status(400).json({
-        message: "Course ID and course title are required.",
+        message: "Course ID is required.",
       });
     }
 
-    // Always use the verified student ID from the JWT
+    const course = await Course.findOne({
+      courseId: String(courseId).trim(),
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        message: "Course not found.",
+      });
+    }
+
+    const existingEnrollment = await Enrollment.findOne({
+      studentId: req.user.userId,
+      courseId: course.courseId,
+    });
+
+    if (existingEnrollment) {
+      return res.status(409).json({
+        message: "You are already enrolled in this course.",
+        enrollment: existingEnrollment,
+      });
+    }
+
+    // Paid courses cannot bypass the demo checkout.
+    if (Number(course.price) > 0) {
+      const successfulPayment = await Payment.findOne({
+        studentId: req.user.userId,
+        courseId: course.courseId,
+        status: "successful",
+      });
+
+      if (!successfulPayment) {
+        return res.status(402).json({
+          message: "Please complete the demo payment before enrolling.",
+          paymentRequired: true,
+        });
+      }
+    }
+
     const enrollment = await Enrollment.create({
       studentId: req.user.userId,
-      courseId: String(courseId).trim(),
-      courseTitle: courseTitle.trim(),
+      courseId: course.courseId,
+      courseTitle: course.title,
     });
 
     return res.status(201).json({
@@ -42,7 +76,6 @@ router.post("/", authMiddleware, async (req, res) => {
       enrollment,
     });
   } catch (error) {
-    // The unique index blocks duplicate enrollments
     if (error.code === 11000) {
       return res.status(409).json({
         message: "You are already enrolled in this course.",
@@ -58,8 +91,8 @@ router.post("/", authMiddleware, async (req, res) => {
 });
 
 // GET /api/enrollments
-// Retrieve the current student's enrollments
-router.get("/", authMiddleware, async (req, res) => {
+// Retrieve the current student's enrollments.
+router.get("/", async (req, res) => {
   try {
     if (req.user.role !== "student") {
       return res.status(403).json({

@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import "./InstructorDashboard.css";
 import LiveClassroom from "./LiveClassroom";
@@ -6,6 +7,7 @@ import Logo from "./Logo";
 const API_URL = "http://localhost:5000/api/courses";
 const QUIZ_API_URL = "http://localhost:5000/api/quizzes";
 const LIVE_CLASS_API_URL = "http://localhost:5000/api/live-classes";
+const PAYMENT_API_URL = "http://localhost:5000/api/payments";
 
 const emptyForm = {
   title: "",
@@ -69,6 +71,26 @@ function getTodayLocalDate() {
   return date.toISOString().slice(0, 10);
 }
 
+function formatCurrency(amount) {
+  return `₹${Number(amount || 0).toLocaleString("en-IN")}`;
+}
+
+function formatTransactionDate(date) {
+  if (!date) return "—";
+
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) return "—";
+
+  return parsedDate.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function InstructorDashboard({ user: userProp, onSignOut }) {
   const [user, setUser] = useState(userProp || getStoredUser());
   const [page, setPage] = useState("overview");
@@ -80,6 +102,18 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  // Revenue dashboard state
+  const [revenueData, setRevenueData] = useState({
+    totalRevenue: 0,
+    successfulPayments: 0,
+    failedPayments: 0,
+    courseRevenue: [],
+    recentTransactions: [],
+  });
+
+  const [revenueLoading, setRevenueLoading] = useState(false);
+  const [revenueError, setRevenueError] = useState("");
 
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -144,6 +178,36 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load instructor revenue
+  const loadRevenue = async () => {
+    setRevenueLoading(true);
+    setRevenueError("");
+
+    try {
+      const data = await requestApi(
+        `${PAYMENT_API_URL}/instructor/revenue`
+      );
+
+      setRevenueData({
+        totalRevenue: Number(data.totalRevenue || 0),
+        successfulPayments: Number(data.successfulPayments || 0),
+        failedPayments: Number(data.failedPayments || 0),
+        courseRevenue: Array.isArray(data.courseRevenue)
+          ? data.courseRevenue
+          : [],
+        recentTransactions: Array.isArray(data.recentTransactions)
+          ? data.recentTransactions
+          : [],
+      });
+    } catch (err) {
+      setRevenueError(
+        err.message || "Unable to load revenue information."
+      );
+    } finally {
+      setRevenueLoading(false);
     }
   };
 
@@ -272,11 +336,16 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load live classes whenever Manage Lessons is opened
+  // Load data whenever a dashboard section is opened
   useEffect(() => {
     if (page === "lessons") {
       loadLiveClasses();
     }
+
+    if (page === "revenue") {
+      loadRevenue();
+    }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
@@ -294,15 +363,14 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     [courses]
   );
 
-  const totalStudents = useMemo(
-    () =>
-      courses.reduce(
-        (sum, course) =>
-          sum + (course.enrolledStudents?.length || course.students?.length || 0),
-        0
-      ),
-    [courses]
-  );
+ const totalStudents = useMemo(
+  () =>
+    courses.reduce(
+      (sum, course) => sum + (course.studentCount || 0),
+      0
+    ),
+  [courses]
+);
 
   const navigate = (nextPage) => {
     setPage(nextPage);
@@ -777,6 +845,222 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
     </section>
   );
 
+  // Instructor Revenue Dashboard
+  const renderRevenue = () => (
+    <section className="instructor-section revenue-dashboard">
+      <div className="section-heading">
+        <div>
+          <span className="section-kicker">PAYMENT OVERVIEW</span>
+          <h2>Revenue Dashboard</h2>
+          <p>
+            Track successful and failed demo payments from your courses.
+          </p>
+        </div>
+
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={loadRevenue}
+          disabled={revenueLoading}
+        >
+          {revenueLoading ? "Refreshing..." : "↻ Refresh"}
+        </button>
+      </div>
+
+      {revenueError && (
+        <div className="dashboard-alert error-alert">
+          {revenueError}
+        </div>
+      )}
+
+      {revenueLoading ? (
+        <div className="course-loading">
+          <span className="loading-spinner" />
+          Loading revenue information...
+        </div>
+      ) : (
+        <>
+          <div className="instructor-stats revenue-stats">
+            <article className="instructor-stat-card">
+              <div className="stat-icon green-icon">₹</div>
+              <div>
+                <span className="stat-label">Total Revenue</span>
+                <strong>
+                  {formatCurrency(revenueData.totalRevenue)}
+                </strong>
+              </div>
+            </article>
+
+            <article className="instructor-stat-card">
+              <div className="stat-icon blue-icon">✓</div>
+              <div>
+                <span className="stat-label">Successful Payments</span>
+                <strong>{revenueData.successfulPayments}</strong>
+              </div>
+            </article>
+
+            <article className="instructor-stat-card">
+              <div className="stat-icon purple-icon">×</div>
+              <div>
+                <span className="stat-label">Failed Payments</span>
+                <strong>{revenueData.failedPayments}</strong>
+              </div>
+            </article>
+          </div>
+
+          <section className="revenue-panel">
+            <div className="section-heading">
+              <div>
+                <h2>Course-wise Revenue</h2>
+                <p>Revenue earned from each of your courses.</p>
+              </div>
+            </div>
+
+            {revenueData.courseRevenue.length === 0 ? (
+              <div className="lesson-empty-state">
+                No course revenue available yet.
+              </div>
+            ) : (
+              <div className="revenue-table-wrapper">
+                <table className="revenue-table">
+                  <thead>
+                    <tr>
+                      <th>Course</th>
+                      <th>Successful Payments</th>
+                      <th>Revenue</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {revenueData.courseRevenue.map((item, index) => {
+                      const courseTitle =
+                        item.courseTitle ||
+                        item.title ||
+                        item.name ||
+                        item._id ||
+                        "Course";
+
+                      const amount = Number(
+                        item.totalRevenue ??
+                        item.revenue ??
+                        item.amount ??
+                        0
+                      );
+
+                      const paymentCount = Number(
+                        item.successfulPayments ??
+                        item.paymentCount ??
+                        item.paymentsCount ??
+                        item.count ??
+                        0
+                      );
+
+                      return (
+                        <tr key={item.courseId || item._id || index}>
+                          <td>{courseTitle}</td>
+                          <td>{paymentCount}</td>
+                          <td className="revenue-amount">
+                            {formatCurrency(amount)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="revenue-panel">
+            <div className="section-heading">
+              <div>
+                <h2>Recent Transactions</h2>
+                <p>Latest payment activity for your courses.</p>
+              </div>
+            </div>
+
+            {revenueData.recentTransactions.length === 0 ? (
+              <div className="lesson-empty-state">
+                No transactions available yet.
+              </div>
+            ) : (
+              <div className="revenue-table-wrapper">
+                <table className="revenue-table">
+                  <thead>
+                    <tr>
+                      <th>Course</th>
+                      <th>Transaction ID</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {revenueData.recentTransactions.map((transaction, index) => {
+                      const status = String(
+                        transaction.status || "unknown"
+                      ).toLowerCase();
+
+                      return (
+                        <tr
+                          key={
+                            transaction._id ||
+                            transaction.transactionId ||
+                            index
+                          }
+                        >
+                          <td>
+                            {transaction.courseTitle ||
+                              transaction.course?.title ||
+                              "Course"}
+                          </td>
+
+                          <td>
+                            {transaction.transactionId ||
+                              transaction._id ||
+                              "—"}
+                          </td>
+
+                          <td className="revenue-amount">
+                            {formatCurrency(transaction.amount)}
+                          </td>
+
+                          <td>
+                            <span
+                              className={`payment-status-badge ${status}`}
+                            >
+                              {status}
+                            </span>
+                          </td>
+
+                          <td>
+                            {formatTransactionDate(
+                              transaction.paidAt ||
+                              transaction.createdAt
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <div className="revenue-demo-notice">
+            <strong>Demo Payment Information</strong>
+            <p>
+              This dashboard displays simulated payment records only.
+              No real money is collected or transferred.
+            </p>
+          </div>
+        </>
+      )}
+    </section>
+  );
+
   // Live classes section inside Manage Lessons
   const renderLiveClasses = () => (
     <section className="instructor-section live-classes-section">
@@ -1090,6 +1374,15 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
             <span>📹</span>
             <strong>Manage Teaching</strong>
             <small>Manage recorded lessons and live classes</small>
+          </button>
+
+          <button
+            className="quick-action-card"
+            onClick={() => navigate("revenue")}
+          >
+            <span>₹</span>
+            <strong>Revenue</strong>
+            <small>View payments and course earnings</small>
           </button>
         </div>
       </section>
@@ -1529,6 +1822,15 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
             <span className="sidebar-link-icon">✎</span>
             <span>Manage Quizzes</span>
           </button>
+
+          <button
+            type="button"
+            className={`instructor-sidebar-link ${page === "revenue" ? "active" : ""}`}
+            onClick={() => navigate("revenue")}
+          >
+            <span className="sidebar-link-icon">₹</span>
+            <span>Revenue</span>
+          </button>
         </nav>
 
         <div className="sidebar-bottom">
@@ -1569,6 +1871,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
                 {page === "create" && (editingId ? "Edit Course" : "Create Course")}
                 {page === "lessons" && "Manage Lessons"}
                 {page === "quizzes" && "Manage Quizzes"}
+                {page === "revenue" && "Revenue"}
               </strong>
             </div>
           </div>
@@ -1602,6 +1905,7 @@ export default function InstructorDashboard({ user: userProp, onSignOut }) {
           )}
 
           {page === "quizzes" && renderQuizManager()}
+          {page === "revenue" && renderRevenue()}
 
           <footer className="instructor-footer">
             © {new Date().getFullYear()} LearnSpace. Keep inspiring learners.

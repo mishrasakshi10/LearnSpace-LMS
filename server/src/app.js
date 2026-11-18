@@ -1,4 +1,3 @@
-
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
@@ -13,6 +12,7 @@ const app = express();
 // Import routes
 const authRoutes = require("./routes/authRoutes");
 const enrollmentRoutes = require("./routes/enrollmentRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const courseRoutes = require("./routes/courseRoutes");
 const quizRoutes = require("./routes/quizRoutes");
@@ -24,37 +24,25 @@ const adminRoutes = require("./routes/adminRoutes");
 app.use(cors({ origin: "http://localhost:5173" }));
 app.use(express.json());
 
-// Authentication routes
+// API routes
 app.use("/api/auth", authRoutes);
-
-// Course enrollment routes
 app.use("/api/enrollments", enrollmentRoutes);
-
-// Course progress routes
+app.use("/api/payments", paymentRoutes);
 app.use("/api/progress", progressRoutes);
-
-// Instructor Course routes
 app.use("/api/courses", courseRoutes);
-
-// Quiz routes
 app.use("/api/quizzes", quizRoutes);
-
-// Certificate routes
 app.use("/api/certificates", certificateRoutes);
-
-// Live Class routes
 app.use("/api/live-classes", liveClassRoutes);
-
-// admin routes
 app.use("/api/admin", adminRoutes);
 
 console.log("Admin routes loaded:", typeof adminRoutes);
 
+// Admin test route
 app.get("/api/admin/test", (req, res) => {
   res.json({ message: "Admin route is working!" });
 });
 
-// Test route
+// Backend test route
 app.get("/", (req, res) => {
   res.json({ message: "LMS backend is running!" });
 });
@@ -62,7 +50,7 @@ app.get("/", (req, res) => {
 // Server port
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB and start the server
+// Connect to MongoDB and start server
 async function startServer() {
   try {
     if (!process.env.MONGODB_URI) {

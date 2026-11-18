@@ -1,5 +1,6 @@
 
 const Course = require("../models/Course");
+const Enrollment = require("../models/Enrollment");
 const User = require("../models/User");
 
 // Create a course
@@ -68,7 +69,23 @@ exports.getMyCourses = async (req, res) => {
       instructorId: req.user.userId,
     }).sort({ createdAt: -1 });
 
-    return res.status(200).json({ courses });
+    const coursesWithStudentCount = await Promise.all(
+      courses.map(async (course) => {
+        const studentCount = await Enrollment.countDocuments({
+          courseId: course.courseId,
+          status: { $in: ["enrolled", "completed"] },
+        });
+
+        return {
+          ...course.toObject(),
+          studentCount,
+        };
+      })
+    );
+
+    return res.status(200).json({
+      courses: coursesWithStudentCount,
+    });
   } catch (error) {
     console.error("Get instructor courses error:", error);
     return res.status(500).json({

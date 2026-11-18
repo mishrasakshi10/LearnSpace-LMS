@@ -1,39 +1,81 @@
 
 const LessonProgress = require("../models/LessonProgress");
+const Enrollment = require("../models/Enrollment");
+const Course = require("../models/Course");
+
+// Verify that the logged-in student is enrolled
+const verifyEnrollment = async (studentId, courseId) => {
+  return await Enrollment.findOne({
+    studentId,
+    courseId,
+    status: { $in: ["enrolled", "completed"] },
+  });
+};
 
 // Get progress for one course
 const getProgress = async (req, res) => {
   try {
+    if (req.user.role !== "student") {
+      return res.status(403).json({
+        message: "Only students can access course progress.",
+      });
+    }
+
     const { courseId } = req.params;
 
-    if (!courseId || !courseId.trim()) {
+    if (typeof courseId !== "string" || !courseId.trim()) {
       return res.status(400).json({
         message: "Course ID is required.",
       });
     }
 
-    const progress = await LessonProgress.findOne({
-      studentId: req.user.userId,
-      courseId: courseId.trim(),
-    });
+    const cleanCourseId = courseId.trim();
 
-    if (!progress) {
-      return res.status(200).json({
-        courseId: courseId.trim(),
-        completedLessons: [],
-        totalLessons: 3,
-        progressPercentage: 0,
+    const enrollment = await verifyEnrollment(
+      req.user.userId,
+      cleanCourseId
+    );
+
+    if (!enrollment) {
+      return res.status(403).json({
+        message: "You must enroll in this course to access progress.",
       });
     }
 
-    const progressPercentage = Math.round(
-      (progress.completedLessons.length / progress.totalLessons) * 100
-    );
+    const course = await Course.findOne({
+      courseId: cleanCourseId,
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        message: "Course not found.",
+      });
+    }
+
+    const totalLessons = course.lessons.length;
+
+    const progress = await LessonProgress.findOne({
+      studentId: req.user.userId,
+      courseId: cleanCourseId,
+    });
+
+    const completedLessons = progress
+      ? progress.completedLessons.filter(
+          (index) => Number.isInteger(index) &&
+            index >= 0 &&
+            index < totalLessons
+        )
+      : [];
+
+    const progressPercentage =
+      totalLessons > 0
+        ? Math.round((completedLessons.length / totalLessons) * 100)
+        : 0;
 
     return res.status(200).json({
-      courseId: progress.courseId,
-      completedLessons: progress.completedLessons,
-      totalLessons: progress.totalLessons,
+      courseId: cleanCourseId,
+      completedLessons,
+      totalLessons,
       progressPercentage,
     });
   } catch (error) {
@@ -48,17 +90,52 @@ const getProgress = async (req, res) => {
 // Save progress for one course
 const saveProgress = async (req, res) => {
   try {
-    const { courseId, completedLessons, totalLessons } = req.body;
+    if (req.user.role !== "student") {
+      return res.status(403).json({
+        message: "Only students can update course progress.",
+      });
+    }
+
+    const { courseId, completedLessons } = req.body;
 
     if (
       typeof courseId !== "string" ||
       !courseId.trim() ||
-      !Array.isArray(completedLessons) ||
-      !Number.isInteger(totalLessons) ||
-      totalLessons < 1
+      !Array.isArray(completedLessons)
     ) {
       return res.status(400).json({
-        message: "Valid courseId, completedLessons, and totalLessons are required.",
+        message: "Valid courseId and completedLessons are required.",
+      });
+    }
+
+    const cleanCourseId = courseId.trim();
+
+    const enrollment = await verifyEnrollment(
+      req.user.userId,
+      cleanCourseId
+    );
+
+    if (!enrollment) {
+      return res.status(403).json({
+        message: "You must enroll in this course before updating progress.",
+      });
+    }
+
+    const course = await Course.findOne({
+      courseId: cleanCourseId,
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        message: "Course not found.",
+      });
+    }
+
+    const totalLessons = course.lessons.length;
+
+    if (totalLessons < 1) {
+      return res.status(400).json({
+        message: "This course does not have any lessons yet.",
       });
     }
 
@@ -75,7 +152,6 @@ const saveProgress = async (req, res) => {
       });
     }
 
-    // Remove duplicate lesson indexes.
     const uniqueLessons = [...new Set(completedLessons)].sort(
       (a, b) => a - b
     );
@@ -83,7 +159,7 @@ const saveProgress = async (req, res) => {
     const progress = await LessonProgress.findOneAndUpdate(
       {
         studentId: req.user.userId,
-        courseId: courseId.trim(),
+        courseId: cleanCourseId,
       },
       {
         $set: {
@@ -100,14 +176,14 @@ const saveProgress = async (req, res) => {
     );
 
     const progressPercentage = Math.round(
-      (progress.completedLessons.length / progress.totalLessons) * 100
+      (progress.completedLessons.length / totalLessons) * 100
     );
 
     return res.status(200).json({
       message: "Lesson progress saved successfully.",
       courseId: progress.courseId,
       completedLessons: progress.completedLessons,
-      totalLessons: progress.totalLessons,
+      totalLessons,
       progressPercentage,
     });
   } catch (error) {

@@ -1,8 +1,8 @@
 # LearnSpace LMS
 
-**A Full-Stack Learning Management System**
+### A Full-Stack Learning Management System
 
-LearnSpace is a web-based Learning Management System (LMS) designed to provide an interactive platform for students, instructors, and administrators. It helps manage courses, lessons, student enrollments, and live learning activities through role-based dashboards.
+LearnSpace LMS is a web-based Learning Management System built to simplify online education. It provides separate role-based dashboards for Students, Instructors, and Administrators, allowing users to manage courses, lessons, enrollments, and learning activities through a centralized platform.
 
 ## Features
 
@@ -10,9 +10,27 @@ LearnSpace is a web-based Learning Management System (LMS) designed to provide a
 - Student registration and login
 - Browse available courses
 - Enroll in courses
-- Access course lessons
+- Demo payment checkout for paid courses
+- Successful and failed payment handling
+- Access enrolled course lessons
 - Track learning progress
 - View live classes
+- My Learning dashboard
+
+### Instructor
+- Instructor dashboard
+- Create, update, and manage courses
+- Add and manage course lessons
+- Manage live classes
+- View enrolled student counts
+- Track course revenue
+- View payment and revenue information
+
+### Admin
+- Admin dashboard
+- Manage students and instructors
+- Manage courses and platform activities
+- Monitor platform information
 
 ## Project Screenshots
 
@@ -25,29 +43,19 @@ LearnSpace is a web-based Learning Management System (LMS) designed to provide a
 ### Admin Dashboard
 ![Admin Dashboard](Screenshots/admin-dashboard.png)
 
-### Instructor
-- Instructor dashboard
-- Manage courses and lessons
-- Add learning materials
-- Manage live classes
-
-### Admin
-- Admin dashboard
-- Manage users and instructors
-- Manage courses and platform activities
-- Monitor platform information
-
 ## Technologies Used
 
 **Frontend**
 - React.js
-- HTML
-- CSS
+- HTML5
+- CSS3
 - JavaScript
+- Vite
 
 **Backend**
 - Node.js
 - Express.js
+- REST APIs
 
 **Database**
 - MongoDB
@@ -62,8 +70,8 @@ LearnSpace is a web-based Learning Management System (LMS) designed to provide a
 
 ```text
 LearnSpace-LMS/
-├── client/          # React frontend
-├── server/          # Node.js backend
+├── client/             # React frontend
+├── server/             # Node.js backend
 └── README.md
 ```
 
@@ -94,7 +102,7 @@ npm install
 
 ### 4. Configure environment variables
 
-Create a `.env` file in the server directory and add the environment variables required by the project.
+Create a `.env` file inside the `server` directory.
 
 Example:
 
@@ -103,7 +111,7 @@ PORT=5000
 MONGODB_URI=your_mongodb_connection_string
 ```
 
-Use the exact variable names expected by your backend configuration.
+Add all other environment variables required by your backend configuration. Never upload actual credentials or secret keys to GitHub.
 
 ### 5. Run the application
 
@@ -111,10 +119,10 @@ Start the backend and frontend in separate terminals using the scripts configure
 
 ## Future Enhancements
 
-- Online payment integration
 - Advanced learning analytics
 - Course ratings and reviews
-- Improved live learning features
+- Enhanced live learning features
+- Improved learning progress reports
 
 ## Author
 
