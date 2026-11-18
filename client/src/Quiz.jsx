@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import "./Quiz.css";
 
-const QUIZ_API_URL = "http://localhost:5000/api/quizzes";
+const QUIZ_API_URL = `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/quizzes`;
 
 function Quiz({ courseId, onBack }) {
   const [quiz, setQuiz] = useState(null);

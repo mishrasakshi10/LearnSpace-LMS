@@ -7,7 +7,7 @@ import {
 
 import "@livekit/components-styles";
 
-const LIVE_CLASS_API_URL = "http://localhost:5000/api/live-classes";
+const LIVE_CLASS_API_URL = `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/live-classes`;
 
 export default function LiveClassroom({
   liveClassId,

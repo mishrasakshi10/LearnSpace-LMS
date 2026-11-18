@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import "./AdminDashboard.css";
 import Logo from "./Logo";
 
-const API_URL = "http://localhost:5000/api/admin";
+const API_URL = `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/admin`;
 
 function AdminDashboard({ user, onSignOut }) {
   const [activeSection, setActiveSection] = useState("dashboard");

@@ -6,13 +6,15 @@ import LiveClassroom from "./LiveClassroom";
 import AdminDashboard from "./AdminDashboard";
 import Logo from "./Logo";
 
-const API_URL = "http://localhost:5000/api/auth";
-const COURSES_API_URL = "http://localhost:5000/api/courses";
-const ENROLLMENT_API_URL = "http://localhost:5000/api/enrollments";
-const PROGRESS_API_URL = "http://localhost:5000/api/progress";
-const CERTIFICATE_API_URL = "http://localhost:5000/api/certificates";
-const PAYMENT_API_URL = "http://localhost:5000/api/payments";
-const LIVE_CLASSES_API_URL = "http://localhost:5000/api/live-classes";
+const BASE_API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+const API_URL = `${BASE_API_URL}/auth`;
+const COURSES_API_URL = `${BASE_API_URL}/courses`;
+const ENROLLMENT_API_URL = `${BASE_API_URL}/enrollments`;
+const PROGRESS_API_URL = `${BASE_API_URL}/progress`;
+const CERTIFICATE_API_URL = `${BASE_API_URL}/certificates`;
+const PAYMENT_API_URL = `${BASE_API_URL}/payments`;
+const LIVE_CLASSES_API_URL = `${BASE_API_URL}/live-classes`;
 
 const VALID_ROLES = ["student", "instructor", "admin"];
 

@@ -4,10 +4,12 @@ import "./InstructorDashboard.css";
 import LiveClassroom from "./LiveClassroom";
 import Logo from "./Logo";
 
-const API_URL = "http://localhost:5000/api/courses";
-const QUIZ_API_URL = "http://localhost:5000/api/quizzes";
-const LIVE_CLASS_API_URL = "http://localhost:5000/api/live-classes";
-const PAYMENT_API_URL = "http://localhost:5000/api/payments";
+const BASE_API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+const API_URL = `${BASE_API_URL}/courses`;
+const QUIZ_API_URL = `${BASE_API_URL}/quizzes`;
+const LIVE_CLASS_API_URL = `${BASE_API_URL}/live-classes`;
+const PAYMENT_API_URL = `${BASE_API_URL}/payments`;
 
 const emptyForm = {
   title: "",
