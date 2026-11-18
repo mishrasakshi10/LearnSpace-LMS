@@ -2,7 +2,14 @@
 
 ### A Full-Stack Learning Management System
 
-LearnSpace LMS is a web-based Learning Management System built to simplify online education. It provides separate role-based dashboards for Students, Instructors, and Administrators, allowing users to manage courses, lessons, enrollments, and learning activities through a centralized platform.
+LearnSpace LMS is a web-based Learning Management System designed to simplify online education. It provides separate role-based dashboards for Students, Instructors, and Administrators to manage courses, lessons, enrollments, payments, and learning activities through a centralized platform.
+
+## Live Demo
+
+- **Frontend:** https://learn-space-lms-five.vercel.app/
+- **Backend:** https://learnspace-lms.onrender.com/
+
+> Note: The backend is hosted on Render's free plan and may take some time to respond after a period of inactivity.
 
 ## Features
 
@@ -64,14 +71,18 @@ LearnSpace LMS is a web-based Learning Management System built to simplify onlin
 **Tools**
 - Visual Studio Code
 - Git and GitHub
-- Postman
+
+**Deployment**
+- Vercel – Frontend
+- Render – Backend
+- MongoDB Atlas – Database
 
 ## Project Structure
 
 ```text
 LearnSpace-LMS/
-├── client/             # React frontend
-├── server/             # Node.js backend
+├── client/                 # React frontend
+├── server/                 # Node.js backend
 └── README.md
 ```
 
@@ -84,38 +95,62 @@ git clone https://github.com/mishrasakshi10/LearnSpace-LMS.git
 cd LearnSpace-LMS
 ```
 
-### 2. Install frontend dependencies
-
-```bash
-cd client
-npm install
-```
-
-### 3. Install backend dependencies
-
-Open another terminal:
+### 2. Install backend dependencies
 
 ```bash
 cd server
 npm install
 ```
 
-### 4. Configure environment variables
-
-Create a `.env` file inside the `server` directory.
-
-Example:
+Create a `.env` file inside the `server` directory:
 
 ```env
 PORT=5000
 MONGODB_URI=your_mongodb_connection_string
+JWT_SECRET=your_jwt_secret
+CLIENT_URL=http://localhost:5173
 ```
 
-Add all other environment variables required by your backend configuration. Never upload actual credentials or secret keys to GitHub.
+Add any additional environment variables required by your configured features. Never upload actual credentials or secret keys to GitHub.
 
-### 5. Run the application
+### 3. Start the backend
 
-Start the backend and frontend in separate terminals using the scripts configured in their respective `package.json` files.
+```bash
+npm start
+```
+
+The backend runs at:
+
+`http://localhost:5000`
+
+### 4. Install frontend dependencies
+
+Open another terminal:
+
+```bash
+cd client
+npm install
+```
+
+Create a `.env` file inside the `client` directory:
+
+```env
+VITE_API_URL=http://localhost:5000/api
+```
+
+### 5. Start the frontend
+
+```bash
+npm run dev
+```
+
+Open the local frontend URL shown in the terminal, usually:
+
+`http://localhost:5173`
+
+## Payment Information
+
+The project currently uses a demo payment checkout flow for testing payment success and failure scenarios. It does not process real payments through a live payment gateway.
 
 ## Future Enhancements
 
